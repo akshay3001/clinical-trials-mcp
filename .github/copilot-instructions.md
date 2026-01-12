@@ -68,6 +68,8 @@ urlParams.set('filter.overallStatus', params.status.toUpperCase());
 
 **Pagination:** Max 1000 per page. Use `pageToken` for next page. Set `countTotal=true` for total count.
 
+**Default Page Size:** 1000 (changed from 100 for better results coverage). MCP server supports `fetchAll` parameter to automatically paginate through all results.
+
 ## Key Files & Responsibilities
 
 - **[src/api/client.ts](src/api/client.ts):** API client with retry logic, query building, Zod validation
@@ -76,6 +78,7 @@ urlParams.set('filter.overallStatus', params.status.toUpperCase());
 - **[src/utils/helpers.ts](src/utils/helpers.ts):** `filterStudies()`, `formatStudySummary()`, `generateSessionId()`
 - **[src/models/types.ts](src/models/types.ts):** Zod schemas for API responses + TypeScript types
 - **[src/mcp/server.ts](src/mcp/server.ts):** 5 MCP tools (search, refine, details, summarize, export)
+  - `search_trials`: Default pageSize=1000, optional `fetchAll=true` for complete pagination
 
 ## Database Schema Essentials
 
@@ -129,8 +132,8 @@ sqlite3 data/clinical-trials.db ".tables"  # Inspect database
 ## Performance Notes
 
 - **Fast (<100ms):** Cache hits, indexed SQLite queries, session filtering
-- **Moderate (1-5s):** First API search, database upserts, FTS queries
-- **Slow (>5s):** Paginated searches (multiple API calls), large exports
+- **Moderate (1-5s):** First API search (up to 1000 results), database upserts, FTS queries
+- **Slow (>5s):** `fetchAll=true` searches (multiple API calls for >1000 results), large exports
 
 ## Remember
 
@@ -138,4 +141,5 @@ sqlite3 data/clinical-trials.db ".tables"  # Inspect database
 2. **Uppercase status filters** for API (`RECRUITING` not `recruiting`)
 3. **Sessions enable refinement** without API re-queries
 4. **Upsert pattern** handles new + updated trials
-5. **No full download** - data loaded on demand only
+5. **Default 1000 results** - use `fetchAll=true` for complete datasets
+6. **No full download** - data loaded on demand only
