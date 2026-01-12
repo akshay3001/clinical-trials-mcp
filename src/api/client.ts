@@ -38,6 +38,11 @@ export class ClinicalTrialsAPIClient {
       parts.push(`AREA[LocationSearch]${params.location}`);
     }
 
+    // Phase is included as a regular search term (not an AREA)
+    if (params.phase) {
+      parts.push(params.phase);
+    }
+
     // Combine with AND
     return parts.length > 0 ? parts.join(' AND ') : '';
   }
@@ -53,12 +58,9 @@ export class ClinicalTrialsAPIClient {
       urlParams.set('query.term', query);
     }
 
-    if (params.phase) {
-      urlParams.set('filter.phase', params.phase);
-    }
-
+    // Status must be uppercase (e.g., RECRUITING, COMPLETED)
     if (params.status) {
-      urlParams.set('filter.overallStatus', params.status);
+      urlParams.set('filter.overallStatus', params.status.toUpperCase());
     }
 
     urlParams.set('pageSize', (params.pageSize || DEFAULT_PAGE_SIZE).toString());
