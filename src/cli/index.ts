@@ -102,6 +102,40 @@ program
   .option("--start-date-before <date>", "Start date before (YYYY-MM-DD)")
   .option("--intervention-type <type>", "Intervention type")
   .option("--has-results", "Only trials with posted results")
+  .option(
+    "--study-type <type>",
+    "Study type (INTERVENTIONAL, OBSERVATIONAL, EXPANDED_ACCESS, PATIENT_REGISTRY)",
+  )
+  .option("--sex <sex>", "Eligible sex (ALL, MALE, FEMALE)")
+  .option("--healthy-volunteers", "Accepts healthy volunteers")
+  .option(
+    "--sponsor-class <class>",
+    "Lead sponsor class (INDUSTRY, NIH, FED, OTHER, INDIV, NETWORK, OTHER_GOV, UNKNOWN)",
+  )
+  .option(
+    "--allocation <type>",
+    "Allocation type (RANDOMIZED, NON_RANDOMIZED, N_A)",
+  )
+  .option(
+    "--intervention-model <model>",
+    "Intervention model (SINGLE_GROUP, PARALLEL, CROSSOVER, FACTORIAL, SEQUENTIAL)",
+  )
+  .option(
+    "--primary-purpose <purpose>",
+    "Primary purpose (TREATMENT, PREVENTION, DIAGNOSTIC, SUPPORTIVE_CARE, SCREENING, HEALTH_SERVICES_RESEARCH, BASIC_SCIENCE, DEVICE_FEASIBILITY, OTHER)",
+  )
+  .option("--min-age <age>", 'Minimum age (e.g., "18 Years")')
+  .option("--max-age <age>", 'Maximum age (e.g., "75 Years")')
+  .option(
+    "--age-groups <groups>",
+    "Age groups (comma-separated: CHILD,ADULT,OLDER_ADULT)",
+  )
+  .option(
+    "--masking <type>",
+    "Masking/blinding type (NONE, SINGLE, DOUBLE, TRIPLE, QUADRUPLE)",
+  )
+  .option("--fda-regulated", "FDA regulated (drug or device)")
+  .option("--keyword <keyword>", "Keyword to search in study keywords")
   .action(async (options) => {
     try {
       const sessionId = options.session;
@@ -128,6 +162,27 @@ program
         startDateBefore: options.startDateBefore,
         interventionType: options.interventionType,
         hasResults: options.hasResults,
+        studyType: options.studyType as FilterParams["studyType"],
+        sex: options.sex as FilterParams["sex"],
+        healthyVolunteers: options.healthyVolunteers,
+        sponsorClass: options.sponsorClass as FilterParams["sponsorClass"],
+        allocation: options.allocation as FilterParams["allocation"],
+        interventionModel:
+          options.interventionModel as FilterParams["interventionModel"],
+        primaryPurpose:
+          options.primaryPurpose as FilterParams["primaryPurpose"],
+        minAge: options.minAge,
+        maxAge: options.maxAge,
+        ageGroups: options.ageGroups
+          ? (options.ageGroups
+              .split(",")
+              .map((s: string) =>
+                s.trim().toUpperCase(),
+              ) as FilterParams["ageGroups"])
+          : undefined,
+        masking: options.masking as FilterParams["masking"],
+        fdaRegulated: options.fdaRegulated,
+        keyword: options.keyword,
       };
 
       // Apply filters

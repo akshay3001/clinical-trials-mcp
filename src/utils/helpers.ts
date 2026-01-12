@@ -82,6 +82,119 @@ export function filterStudies(
       if (study.hasResults !== filters.hasResults) return false;
     }
 
+    // Phase 1 filters
+
+    // Filter by study type
+    if (filters.studyType) {
+      const studyType = protocol.designModule?.studyType?.toUpperCase();
+      if (studyType !== filters.studyType.toUpperCase()) return false;
+    }
+
+    // Filter by sex
+    if (filters.sex) {
+      const sex = protocol.eligibilityModule?.sex?.toUpperCase();
+      if (sex !== filters.sex.toUpperCase()) return false;
+    }
+
+    // Filter by healthy volunteers
+    if (filters.healthyVolunteers !== undefined) {
+      const healthyVolunteers = protocol.eligibilityModule?.healthyVolunteers;
+      if (healthyVolunteers !== filters.healthyVolunteers) return false;
+    }
+
+    // Filter by sponsor class
+    if (filters.sponsorClass) {
+      const sponsorClass =
+        protocol.sponsorCollaboratorsModule?.leadSponsor?.class?.toUpperCase();
+      if (sponsorClass !== filters.sponsorClass.toUpperCase()) return false;
+    }
+
+    // Phase 2 filters
+
+    // Filter by allocation
+    if (filters.allocation) {
+      const allocation = protocol.designModule?.designInfo?.allocation
+        ?.toUpperCase()
+        .replace(/ /g, "_");
+      if (allocation !== filters.allocation.toUpperCase().replace(/ /g, "_"))
+        return false;
+    }
+
+    // Filter by intervention model
+    if (filters.interventionModel) {
+      const model = protocol.designModule?.designInfo?.interventionModel
+        ?.toUpperCase()
+        .replace(/ /g, "_");
+      if (model !== filters.interventionModel.toUpperCase().replace(/ /g, "_"))
+        return false;
+    }
+
+    // Filter by primary purpose
+    if (filters.primaryPurpose) {
+      const purpose = protocol.designModule?.designInfo?.primaryPurpose
+        ?.toUpperCase()
+        .replace(/ /g, "_");
+      if (purpose !== filters.primaryPurpose.toUpperCase().replace(/ /g, "_"))
+        return false;
+    }
+
+    // Filter by minimum age
+    if (filters.minAge) {
+      const studyMinAge = protocol.eligibilityModule?.minimumAge;
+      if (!studyMinAge || studyMinAge === "N/A") return false;
+      // Simple string comparison (e.g., "18 Years" vs "21 Years")
+      if (studyMinAge < filters.minAge) return false;
+    }
+
+    // Filter by maximum age
+    if (filters.maxAge) {
+      const studyMaxAge = protocol.eligibilityModule?.maximumAge;
+      if (!studyMaxAge || studyMaxAge === "N/A") return false;
+      // Simple string comparison
+      if (studyMaxAge > filters.maxAge) return false;
+    }
+
+    // Phase 3 filters
+
+    // Filter by age groups (array matching - study must include at least one)
+    if (filters.ageGroups && filters.ageGroups.length > 0) {
+      const studyAgeGroups = protocol.eligibilityModule?.stdAges || [];
+      const hasMatch = filters.ageGroups.some((ag) =>
+        studyAgeGroups.some((sag) => sag.toUpperCase() === ag.toUpperCase()),
+      );
+      if (!hasMatch) return false;
+    }
+
+    // Filter by masking
+    if (filters.masking) {
+      const masking =
+        protocol.designModule?.designInfo?.maskingInfo?.masking?.toUpperCase();
+      if (masking !== filters.masking.toUpperCase()) return false;
+    }
+
+    // Filter by FDA regulated (drug OR device)
+    if (filters.fdaRegulated !== undefined) {
+      // Note: This info is typically in oversightModule which may not be in our schema
+      // We'll check if it exists in raw data, otherwise skip this filter
+      // For now, we'll use a placeholder that always passes if data not available
+      const rawStudy = study as any;
+      const oversight = rawStudy.protocolSection?.oversightModule;
+      if (oversight) {
+        const isFDARegulated =
+          oversight.isFdaRegulatedDrug || oversight.isFdaRegulatedDevice;
+        if (isFDARegulated !== filters.fdaRegulated) return false;
+      }
+    }
+
+    // Filter by keyword (substring search in keywords array)
+    if (filters.keyword) {
+      const keywords = protocol.conditionsModule?.keywords || [];
+      const hasKeyword = keywords.some((kw) =>
+        kw.toLowerCase().includes(filters.keyword!.toLowerCase()),
+      );
+      if (!hasKeyword) return false;
+    }
+
     return true;
   });
 }

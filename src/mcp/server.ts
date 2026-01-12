@@ -135,6 +135,102 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
               type: "boolean",
               description: "Filter by whether trial has posted results",
             },
+            studyType: {
+              type: "string",
+              enum: [
+                "INTERVENTIONAL",
+                "OBSERVATIONAL",
+                "EXPANDED_ACCESS",
+                "PATIENT_REGISTRY",
+              ],
+              description: "Filter by study type",
+            },
+            sex: {
+              type: "string",
+              enum: ["ALL", "MALE", "FEMALE"],
+              description: "Filter by eligible sex",
+            },
+            healthyVolunteers: {
+              type: "boolean",
+              description: "Filter by whether trial accepts healthy volunteers",
+            },
+            sponsorClass: {
+              type: "string",
+              enum: [
+                "INDUSTRY",
+                "NIH",
+                "FED",
+                "OTHER",
+                "INDIV",
+                "NETWORK",
+                "OTHER_GOV",
+                "UNKNOWN",
+              ],
+              description: "Filter by lead sponsor classification",
+            },
+            allocation: {
+              type: "string",
+              enum: ["RANDOMIZED", "NON_RANDOMIZED", "N_A"],
+              description: "Filter by allocation type (study design)",
+            },
+            interventionModel: {
+              type: "string",
+              enum: [
+                "SINGLE_GROUP",
+                "PARALLEL",
+                "CROSSOVER",
+                "FACTORIAL",
+                "SEQUENTIAL",
+              ],
+              description: "Filter by intervention model (study design)",
+            },
+            primaryPurpose: {
+              type: "string",
+              enum: [
+                "TREATMENT",
+                "PREVENTION",
+                "DIAGNOSTIC",
+                "SUPPORTIVE_CARE",
+                "SCREENING",
+                "HEALTH_SERVICES_RESEARCH",
+                "BASIC_SCIENCE",
+                "DEVICE_FEASIBILITY",
+                "OTHER",
+              ],
+              description: "Filter by primary purpose of the study",
+            },
+            minAge: {
+              type: "string",
+              description:
+                'Filter by minimum age (e.g., "18 Years", "65 Years")',
+            },
+            maxAge: {
+              type: "string",
+              description: 'Filter by maximum age (e.g., "75 Years", "N/A")',
+            },
+            ageGroups: {
+              type: "array",
+              items: {
+                type: "string",
+                enum: ["CHILD", "ADULT", "OLDER_ADULT"],
+              },
+              description:
+                "Filter by age groups (study must include at least one)",
+            },
+            masking: {
+              type: "string",
+              enum: ["NONE", "SINGLE", "DOUBLE", "TRIPLE", "QUADRUPLE"],
+              description: "Filter by masking/blinding type",
+            },
+            fdaRegulated: {
+              type: "boolean",
+              description: "Filter by FDA regulation status (drug or device)",
+            },
+            keyword: {
+              type: "string",
+              description:
+                "Filter by keyword (substring search in study keywords)",
+            },
           },
           required: ["sessionId"],
         },

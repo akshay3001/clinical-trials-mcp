@@ -243,4 +243,46 @@ export interface FilterParams {
   completionDateBefore?: string;
   interventionType?: string;
   hasResults?: boolean;
+  // Phase 1 filters
+  studyType?:
+    | "INTERVENTIONAL"
+    | "OBSERVATIONAL"
+    | "EXPANDED_ACCESS"
+    | "PATIENT_REGISTRY";
+  sex?: "ALL" | "MALE" | "FEMALE";
+  healthyVolunteers?: boolean;
+  sponsorClass?:
+    | "INDUSTRY"
+    | "NIH"
+    | "FED"
+    | "OTHER"
+    | "INDIV"
+    | "NETWORK"
+    | "OTHER_GOV"
+    | "UNKNOWN";
+  // Phase 2 filters
+  allocation?: "RANDOMIZED" | "NON_RANDOMIZED" | "N_A";
+  interventionModel?:
+    | "SINGLE_GROUP"
+    | "PARALLEL"
+    | "CROSSOVER"
+    | "FACTORIAL"
+    | "SEQUENTIAL";
+  primaryPurpose?:
+    | "TREATMENT"
+    | "PREVENTION"
+    | "DIAGNOSTIC"
+    | "SUPPORTIVE_CARE"
+    | "SCREENING"
+    | "HEALTH_SERVICES_RESEARCH"
+    | "BASIC_SCIENCE"
+    | "DEVICE_FEASIBILITY"
+    | "OTHER";
+  minAge?: string; // e.g., "18 Years", "65 Years"
+  maxAge?: string;
+  // Phase 3 filters
+  ageGroups?: ("CHILD" | "ADULT" | "OLDER_ADULT")[]; // Array matching - study must include at least one
+  masking?: "NONE" | "SINGLE" | "DOUBLE" | "TRIPLE" | "QUADRUPLE";
+  fdaRegulated?: boolean; // Either drug OR device regulated
+  keyword?: string; // Substring search in keywords array
 }

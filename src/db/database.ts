@@ -117,6 +117,8 @@ export class DatabaseManager {
       CREATE INDEX IF NOT EXISTS idx_studies_status ON studies(overall_status);
       CREATE INDEX IF NOT EXISTS idx_studies_phase ON studies(phase);
       CREATE INDEX IF NOT EXISTS idx_studies_start_date ON studies(start_date);
+      CREATE INDEX IF NOT EXISTS idx_studies_study_type ON studies(study_type);
+      CREATE INDEX IF NOT EXISTS idx_studies_sponsor_class ON studies(lead_sponsor_class);
       CREATE INDEX IF NOT EXISTS idx_conditions_condition ON conditions(condition);
       CREATE INDEX IF NOT EXISTS idx_interventions_type ON interventions(intervention_type);
       CREATE INDEX IF NOT EXISTS idx_interventions_name ON interventions(intervention_name);
