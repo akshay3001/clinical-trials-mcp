@@ -81,8 +81,13 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             },
             pageSize: {
               type: "number",
-              description: "Number of results to return (1-1000, default 100)",
-              default: 100,
+              description: "Number of results to return (1-1000, default 1000)",
+              default: 1000,
+            },
+            fetchAll: {
+              type: "boolean",
+              description: "Fetch all results using pagination (may take longer for large result sets)",
+              default: false,
             },
           },
         },
@@ -311,16 +316,30 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   try {
     switch (name) {
       case "search_trials": {
-        const searchParams = args as unknown as SearchParams;
+        const { fetchAll, ...searchParams } = args as unknown as SearchParams & { fetchAll?: boolean };
 
         // Check cache first
         let cachedResponse = cache.get<SearchResponse>("search", searchParams);
 
-        let studies;
+        let studies: Study[];
         if (cachedResponse) {
           studies = cachedResponse.studies;
+        } else if (fetchAll) {
+          // Fetch all results using pagination
+          studies = [];
+          for await (const batch of apiClient.searchAll(searchParams)) {
+            studies.push(...batch);
+          }
+          // Cache the combined response
+          const response: SearchResponse = {
+            studies,
+            nextPageToken: undefined,
+            totalCount: studies.length,
+          };
+          cache.set("search", searchParams, response);
+          cache.saveRawResponse(response, searchParams);
         } else {
-          // Make API call
+          // Make single API call
           const response = await apiClient.search(searchParams);
           studies = response.studies;
 
