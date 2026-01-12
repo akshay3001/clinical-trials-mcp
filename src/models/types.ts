@@ -1,4 +1,4 @@
-import { z } from 'zod';
+import { z } from "zod";
 
 // Search parameters schema
 export const SearchParamsSchema = z.object({
@@ -23,9 +23,11 @@ export type SearchParams = z.infer<typeof SearchParamsSchema>;
 // Study protocol section schemas
 export const IdentificationModuleSchema = z.object({
   nctId: z.string(),
-  orgStudyIdInfo: z.object({
-    id: z.string(),
-  }).optional(),
+  orgStudyIdInfo: z
+    .object({
+      id: z.string(),
+    })
+    .optional(),
   briefTitle: z.string(),
   officialTitle: z.string().optional(),
   acronym: z.string().optional(),
@@ -35,30 +37,42 @@ export const StatusModuleSchema = z.object({
   statusVerifiedDate: z.string().optional(),
   overallStatus: z.string(),
   lastKnownStatus: z.string().optional(),
-  expandedAccessInfo: z.object({
-    hasExpandedAccess: z.boolean().optional(),
-  }).optional(),
-  startDateStruct: z.object({
-    date: z.string(),
-    type: z.enum(['ACTUAL', 'ESTIMATED']).optional(),
-  }).optional(),
-  primaryCompletionDateStruct: z.object({
-    date: z.string(),
-    type: z.enum(['ACTUAL', 'ESTIMATED']).optional(),
-  }).optional(),
-  completionDateStruct: z.object({
-    date: z.string(),
-    type: z.enum(['ACTUAL', 'ESTIMATED']).optional(),
-  }).optional(),
+  expandedAccessInfo: z
+    .object({
+      hasExpandedAccess: z.boolean().optional(),
+    })
+    .optional(),
+  startDateStruct: z
+    .object({
+      date: z.string(),
+      type: z.enum(["ACTUAL", "ESTIMATED"]).optional(),
+    })
+    .optional(),
+  primaryCompletionDateStruct: z
+    .object({
+      date: z.string(),
+      type: z.enum(["ACTUAL", "ESTIMATED"]).optional(),
+    })
+    .optional(),
+  completionDateStruct: z
+    .object({
+      date: z.string(),
+      type: z.enum(["ACTUAL", "ESTIMATED"]).optional(),
+    })
+    .optional(),
   studyFirstSubmitDate: z.string().optional(),
-  studyFirstPostDateStruct: z.object({
-    date: z.string(),
-    type: z.string().optional(),
-  }).optional(),
-  lastUpdatePostDateStruct: z.object({
-    date: z.string(),
-    type: z.string().optional(),
-  }).optional(),
+  studyFirstPostDateStruct: z
+    .object({
+      date: z.string(),
+      type: z.string().optional(),
+    })
+    .optional(),
+  lastUpdatePostDateStruct: z
+    .object({
+      date: z.string(),
+      type: z.string().optional(),
+    })
+    .optional(),
 });
 
 export const DescriptionModuleSchema = z.object({
@@ -74,34 +88,48 @@ export const ConditionsModuleSchema = z.object({
 export const DesignModuleSchema = z.object({
   studyType: z.string(),
   phases: z.array(z.string()).optional(),
-  designInfo: z.object({
-    allocation: z.string().optional(),
-    interventionModel: z.string().optional(),
-    primaryPurpose: z.string().optional(),
-    maskingInfo: z.object({
-      masking: z.string().optional(),
-    }).optional(),
-  }).optional(),
-  enrollmentInfo: z.object({
-    count: z.number().optional(),
-    type: z.enum(['ACTUAL', 'ESTIMATED']).optional(),
-  }).optional(),
+  designInfo: z
+    .object({
+      allocation: z.string().optional(),
+      interventionModel: z.string().optional(),
+      primaryPurpose: z.string().optional(),
+      maskingInfo: z
+        .object({
+          masking: z.string().optional(),
+        })
+        .optional(),
+    })
+    .optional(),
+  enrollmentInfo: z
+    .object({
+      count: z.number().optional(),
+      type: z.enum(["ACTUAL", "ESTIMATED"]).optional(),
+    })
+    .optional(),
 });
 
 export const ArmsInterventionsModuleSchema = z.object({
-  armGroups: z.array(z.object({
-    label: z.string(),
-    type: z.string().optional(),
-    description: z.string().optional(),
-    interventionNames: z.array(z.string()).optional(),
-  })).optional(),
-  interventions: z.array(z.object({
-    type: z.string(),
-    name: z.string(),
-    description: z.string().optional(),
-    armGroupLabels: z.array(z.string()).optional(),
-    otherNames: z.array(z.string()).optional(),
-  })).optional(),
+  armGroups: z
+    .array(
+      z.object({
+        label: z.string(),
+        type: z.string().optional(),
+        description: z.string().optional(),
+        interventionNames: z.array(z.string()).optional(),
+      }),
+    )
+    .optional(),
+  interventions: z
+    .array(
+      z.object({
+        type: z.string(),
+        name: z.string(),
+        description: z.string().optional(),
+        armGroupLabels: z.array(z.string()).optional(),
+        otherNames: z.array(z.string()).optional(),
+      }),
+    )
+    .optional(),
 });
 
 export const EligibilityModuleSchema = z.object({
@@ -115,35 +143,51 @@ export const EligibilityModuleSchema = z.object({
 });
 
 export const ContactsLocationsModuleSchema = z.object({
-  centralContacts: z.array(z.object({
-    name: z.string().optional(),
-    role: z.string().optional(),
-    phone: z.string().optional(),
-    email: z.string().optional(),
-  })).optional(),
-  locations: z.array(z.object({
-    facility: z.string().optional(),
-    status: z.string().optional(),
-    city: z.string().optional(),
-    state: z.string().optional(),
-    zip: z.string().optional(),
-    country: z.string().optional(),
-    geoPoint: z.object({
-      lat: z.number(),
-      lon: z.number(),
-    }).optional(),
-  })).optional(),
+  centralContacts: z
+    .array(
+      z.object({
+        name: z.string().optional(),
+        role: z.string().optional(),
+        phone: z.string().optional(),
+        email: z.string().optional(),
+      }),
+    )
+    .optional(),
+  locations: z
+    .array(
+      z.object({
+        facility: z.string().optional(),
+        status: z.string().optional(),
+        city: z.string().optional(),
+        state: z.string().optional(),
+        zip: z.string().optional(),
+        country: z.string().optional(),
+        geoPoint: z
+          .object({
+            lat: z.number(),
+            lon: z.number(),
+          })
+          .optional(),
+      }),
+    )
+    .optional(),
 });
 
 export const SponsorCollaboratorsModuleSchema = z.object({
-  leadSponsor: z.object({
-    name: z.string(),
-    class: z.string().optional(),
-  }).optional(),
-  collaborators: z.array(z.object({
-    name: z.string(),
-    class: z.string().optional(),
-  })).optional(),
+  leadSponsor: z
+    .object({
+      name: z.string(),
+      class: z.string().optional(),
+    })
+    .optional(),
+  collaborators: z
+    .array(
+      z.object({
+        name: z.string(),
+        class: z.string().optional(),
+      }),
+    )
+    .optional(),
 });
 
 export const ProtocolSectionSchema = z.object({
@@ -184,7 +228,7 @@ export interface SearchSession {
 }
 
 // Export formats
-export type ExportFormat = 'csv' | 'json' | 'jsonl';
+export type ExportFormat = "csv" | "json" | "jsonl";
 
 // Filter params for refinement
 export interface FilterParams {

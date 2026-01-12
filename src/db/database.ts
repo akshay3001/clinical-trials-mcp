@@ -1,9 +1,9 @@
-import Database from 'better-sqlite3';
-import { Study } from '../models/types.js';
-import path from 'path';
-import fs from 'fs';
+import Database from "better-sqlite3";
+import { Study } from "../models/types.js";
+import path from "path";
+import fs from "fs";
 
-const DEFAULT_DB_PATH = './data/clinical-trials.db';
+const DEFAULT_DB_PATH = "./data/clinical-trials.db";
 
 export class DatabaseManager {
   private db: Database.Database;
@@ -16,9 +16,9 @@ export class DatabaseManager {
     }
 
     this.db = new Database(dbPath);
-    this.db.pragma('journal_mode = WAL');
-    this.db.pragma('foreign_keys = ON');
-    
+    this.db.pragma("journal_mode = WAL");
+    this.db.pragma("foreign_keys = ON");
+
     this.initialize();
   }
 
@@ -172,7 +172,7 @@ export class DatabaseManager {
     const sponsor = protocol.sponsorCollaboratorsModule;
 
     // Prepare phase as comma-separated string
-    const phase = design?.phases?.join(', ') || null;
+    const phase = design?.phases?.join(", ") || null;
 
     const stmt = this.db.prepare(`
       INSERT INTO studies (
@@ -257,11 +257,13 @@ export class DatabaseManager {
 
     // Insert conditions
     if (conditions?.conditions) {
-      const deleteConditions = this.db.prepare('DELETE FROM conditions WHERE nct_id = ?');
+      const deleteConditions = this.db.prepare(
+        "DELETE FROM conditions WHERE nct_id = ?",
+      );
       deleteConditions.run(nctId);
 
       const insertCondition = this.db.prepare(
-        'INSERT OR IGNORE INTO conditions (nct_id, condition) VALUES (?, ?)'
+        "INSERT OR IGNORE INTO conditions (nct_id, condition) VALUES (?, ?)",
       );
 
       for (const condition of conditions.conditions) {
@@ -271,11 +273,13 @@ export class DatabaseManager {
 
     // Insert keywords
     if (conditions?.keywords) {
-      const deleteKeywords = this.db.prepare('DELETE FROM keywords WHERE nct_id = ?');
+      const deleteKeywords = this.db.prepare(
+        "DELETE FROM keywords WHERE nct_id = ?",
+      );
       deleteKeywords.run(nctId);
 
       const insertKeyword = this.db.prepare(
-        'INSERT OR IGNORE INTO keywords (nct_id, keyword) VALUES (?, ?)'
+        "INSERT OR IGNORE INTO keywords (nct_id, keyword) VALUES (?, ?)",
       );
 
       for (const keyword of conditions.keywords) {
@@ -285,11 +289,13 @@ export class DatabaseManager {
 
     // Insert interventions
     if (interventions?.interventions) {
-      const deleteInterventions = this.db.prepare('DELETE FROM interventions WHERE nct_id = ?');
+      const deleteInterventions = this.db.prepare(
+        "DELETE FROM interventions WHERE nct_id = ?",
+      );
       deleteInterventions.run(nctId);
 
       const insertIntervention = this.db.prepare(
-        'INSERT OR IGNORE INTO interventions (nct_id, intervention_type, intervention_name, description) VALUES (?, ?, ?, ?)'
+        "INSERT OR IGNORE INTO interventions (nct_id, intervention_type, intervention_name, description) VALUES (?, ?, ?, ?)",
       );
 
       for (const intervention of interventions.interventions) {
@@ -297,18 +303,20 @@ export class DatabaseManager {
           nctId,
           intervention.type,
           intervention.name,
-          intervention.description || null
+          intervention.description || null,
         );
       }
     }
 
     // Insert locations
     if (locations?.locations) {
-      const deleteLocations = this.db.prepare('DELETE FROM locations WHERE nct_id = ?');
+      const deleteLocations = this.db.prepare(
+        "DELETE FROM locations WHERE nct_id = ?",
+      );
       deleteLocations.run(nctId);
 
       const insertLocation = this.db.prepare(
-        'INSERT OR IGNORE INTO locations (nct_id, facility, city, state, country, status, latitude, longitude) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+        "INSERT OR IGNORE INTO locations (nct_id, facility, city, state, country, status, latitude, longitude) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
       );
 
       for (const location of locations.locations) {
@@ -320,7 +328,7 @@ export class DatabaseManager {
           location.country || null,
           location.status || null,
           location.geoPoint?.lat || null,
-          location.geoPoint?.lon || null
+          location.geoPoint?.lon || null,
         );
       }
     }
@@ -330,13 +338,15 @@ export class DatabaseManager {
    * Get study by NCT ID
    */
   getStudy(nctId: string): Study | null {
-    const stmt = this.db.prepare('SELECT raw_json FROM studies WHERE nct_id = ?');
+    const stmt = this.db.prepare(
+      "SELECT raw_json FROM studies WHERE nct_id = ?",
+    );
     const row = stmt.get(nctId) as { raw_json: string } | undefined;
-    
+
     if (row) {
       return JSON.parse(row.raw_json);
     }
-    
+
     return null;
   }
 
@@ -350,9 +360,9 @@ export class DatabaseManager {
       ORDER BY rank 
       LIMIT ?
     `);
-    
+
     const rows = stmt.all(query, limit) as { nct_id: string }[];
-    return rows.map(row => row.nct_id);
+    return rows.map((row) => row.nct_id);
   }
 
   /**
@@ -397,7 +407,7 @@ export class DatabaseManager {
     `);
 
     const rows = stmt.all(sessionId) as { raw_json: string }[];
-    return rows.map(row => JSON.parse(row.raw_json));
+    return rows.map((row) => JSON.parse(row.raw_json));
   }
 
   /**

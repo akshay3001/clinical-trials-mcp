@@ -1,10 +1,13 @@
-import { Study, FilterParams } from '../models/types.js';
+import { Study, FilterParams } from "../models/types.js";
 
 /**
  * Filter studies based on refinement criteria
  */
-export function filterStudies(studies: Study[], filters: FilterParams): Study[] {
-  return studies.filter(study => {
+export function filterStudies(
+  studies: Study[],
+  filters: FilterParams,
+): Study[] {
+  return studies.filter((study) => {
     const protocol = study.protocolSection;
     const locations = protocol.contactsLocationsModule?.locations || [];
     const interventions = protocol.armsInterventionsModule?.interventions || [];
@@ -14,24 +17,26 @@ export function filterStudies(studies: Study[], filters: FilterParams): Study[] 
 
     // Filter by location country
     if (filters.locationCountry) {
-      const hasCountry = locations.some(
-        loc => loc.country?.toLowerCase().includes(filters.locationCountry!.toLowerCase())
+      const hasCountry = locations.some((loc) =>
+        loc.country
+          ?.toLowerCase()
+          .includes(filters.locationCountry!.toLowerCase()),
       );
       if (!hasCountry) return false;
     }
 
     // Filter by location state
     if (filters.locationState) {
-      const hasState = locations.some(
-        loc => loc.state?.toLowerCase().includes(filters.locationState!.toLowerCase())
+      const hasState = locations.some((loc) =>
+        loc.state?.toLowerCase().includes(filters.locationState!.toLowerCase()),
       );
       if (!hasState) return false;
     }
 
     // Filter by location city
     if (filters.locationCity) {
-      const hasCity = locations.some(
-        loc => loc.city?.toLowerCase().includes(filters.locationCity!.toLowerCase())
+      const hasCity = locations.some((loc) =>
+        loc.city?.toLowerCase().includes(filters.locationCity!.toLowerCase()),
       );
       if (!hasCity) return false;
     }
@@ -66,7 +71,8 @@ export function filterStudies(studies: Study[], filters: FilterParams): Study[] 
     // Filter by intervention type
     if (filters.interventionType) {
       const hasType = interventions.some(
-        int => int.type.toLowerCase() === filters.interventionType!.toLowerCase()
+        (int) =>
+          int.type.toLowerCase() === filters.interventionType!.toLowerCase(),
       );
       if (!hasType) return false;
     }
@@ -90,7 +96,10 @@ export function generateSessionId(): string {
 /**
  * Format study summary
  */
-export function formatStudySummary(study: Study, includeEligibility: boolean = true): string {
+export function formatStudySummary(
+  study: Study,
+  includeEligibility: boolean = true,
+): string {
   const protocol = study.protocolSection;
   const id = protocol.identificationModule;
   const status = protocol.statusModule;
@@ -114,10 +123,10 @@ export function formatStudySummary(study: Study, includeEligibility: boolean = t
 
   summary += `### Study Details\n\n`;
   summary += `- **Status:** ${status.overallStatus}\n`;
-  summary += `- **Study Type:** ${design?.studyType || 'N/A'}\n`;
-  
+  summary += `- **Study Type:** ${design?.studyType || "N/A"}\n`;
+
   if (design?.phases && design.phases.length > 0) {
-    summary += `- **Phase:** ${design.phases.join(', ')}\n`;
+    summary += `- **Phase:** ${design.phases.join(", ")}\n`;
   }
 
   if (design?.enrollmentInfo?.count) {
@@ -125,7 +134,7 @@ export function formatStudySummary(study: Study, includeEligibility: boolean = t
     if (design.enrollmentInfo.type) {
       summary += ` (${design.enrollmentInfo.type})`;
     }
-    summary += '\n';
+    summary += "\n";
   }
 
   if (status.startDateStruct?.date) {
@@ -133,7 +142,7 @@ export function formatStudySummary(study: Study, includeEligibility: boolean = t
     if (status.startDateStruct.type) {
       summary += ` (${status.startDateStruct.type})`;
     }
-    summary += '\n';
+    summary += "\n";
   }
 
   if (status.primaryCompletionDateStruct?.date) {
@@ -141,7 +150,7 @@ export function formatStudySummary(study: Study, includeEligibility: boolean = t
     if (status.primaryCompletionDateStruct.type) {
       summary += ` (${status.primaryCompletionDateStruct.type})`;
     }
-    summary += '\n';
+    summary += "\n";
   }
 
   if (sponsor?.leadSponsor) {
@@ -149,13 +158,13 @@ export function formatStudySummary(study: Study, includeEligibility: boolean = t
     if (sponsor.leadSponsor.class) {
       summary += ` (${sponsor.leadSponsor.class})`;
     }
-    summary += '\n';
+    summary += "\n";
   }
 
   // Conditions
   if (conditions?.conditions && conditions.conditions.length > 0) {
     summary += `\n### Conditions\n\n`;
-    summary += conditions.conditions.map(c => `- ${c}`).join('\n') + '\n';
+    summary += conditions.conditions.map((c) => `- ${c}`).join("\n") + "\n";
   }
 
   // Interventions
@@ -166,7 +175,7 @@ export function formatStudySummary(study: Study, includeEligibility: boolean = t
       if (intervention.description) {
         summary += `\n  ${intervention.description}`;
       }
-      summary += '\n';
+      summary += "\n";
     }
   }
 
@@ -183,34 +192,34 @@ export function formatStudySummary(study: Study, includeEligibility: boolean = t
   // Eligibility Criteria
   if (includeEligibility && eligibility) {
     summary += `\n### Eligibility Criteria\n\n`;
-    
+
     if (eligibility.eligibilityCriteria) {
       summary += `${eligibility.eligibilityCriteria}\n\n`;
     }
 
     summary += `**Key Requirements:**\n`;
-    
+
     if (eligibility.sex) {
       summary += `- Sex: ${eligibility.sex}\n`;
     }
 
     if (eligibility.minimumAge || eligibility.maximumAge) {
-      summary += `- Age: ${eligibility.minimumAge || 'No minimum'} to ${eligibility.maximumAge || 'No maximum'}\n`;
+      summary += `- Age: ${eligibility.minimumAge || "No minimum"} to ${eligibility.maximumAge || "No maximum"}\n`;
     }
 
     if (eligibility.healthyVolunteers !== undefined) {
-      summary += `- Healthy Volunteers: ${eligibility.healthyVolunteers ? 'Yes' : 'No'}\n`;
+      summary += `- Healthy Volunteers: ${eligibility.healthyVolunteers ? "Yes" : "No"}\n`;
     }
   }
 
   // Locations
   if (locations?.locations && locations.locations.length > 0) {
     summary += `\n### Locations (${locations.locations.length} sites)\n\n`;
-    
+
     // Group by country
     const byCountry = new Map<string, typeof locations.locations>();
     for (const loc of locations.locations) {
-      const country = loc.country || 'Unknown';
+      const country = loc.country || "Unknown";
       if (!byCountry.has(country)) {
         byCountry.set(country, []);
       }
@@ -219,22 +228,22 @@ export function formatStudySummary(study: Study, includeEligibility: boolean = t
 
     for (const [country, locs] of byCountry) {
       summary += `**${country}** (${locs.length} sites)\n`;
-      
+
       // Show first 5 locations per country
       const displayLocs = locs.slice(0, 5);
       for (const loc of displayLocs) {
         const parts = [loc.facility, loc.city, loc.state].filter(Boolean);
-        summary += `- ${parts.join(', ')}`;
+        summary += `- ${parts.join(", ")}`;
         if (loc.status) {
           summary += ` (${loc.status})`;
         }
-        summary += '\n';
+        summary += "\n";
       }
 
       if (locs.length > 5) {
         summary += `  ... and ${locs.length - 5} more\n`;
       }
-      summary += '\n';
+      summary += "\n";
     }
   }
 
@@ -244,7 +253,10 @@ export function formatStudySummary(study: Study, includeEligibility: boolean = t
 /**
  * Format multiple studies as a list
  */
-export function formatStudyList(studies: Study[], maxResults: number = 10): string {
+export function formatStudyList(
+  studies: Study[],
+  maxResults: number = 10,
+): string {
   let output = `Found ${studies.length} studies\n\n`;
 
   const displayStudies = studies.slice(0, maxResults);
@@ -258,16 +270,16 @@ export function formatStudyList(studies: Study[], maxResults: number = 10): stri
 
     output += `${i + 1}. **${id.nctId}** - ${id.briefTitle}\n`;
     output += `   Status: ${status.overallStatus}`;
-    
+
     if (design?.phases && design.phases.length > 0) {
-      output += ` | Phase: ${design.phases.join(', ')}`;
+      output += ` | Phase: ${design.phases.join(", ")}`;
     }
 
     if (design?.enrollmentInfo?.count) {
       output += ` | Enrollment: ${design.enrollmentInfo.count}`;
     }
 
-    output += '\n\n';
+    output += "\n\n";
   }
 
   if (studies.length > maxResults) {

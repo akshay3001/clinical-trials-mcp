@@ -1,28 +1,39 @@
 #!/usr/bin/env node
 
-import { Server } from '@modelcontextprotocol/sdk/server/index.js';
-import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
+import { Server } from "@modelcontextprotocol/sdk/server/index.js";
+import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
-} from '@modelcontextprotocol/sdk/types.js';
-import { apiClient } from '../api/client.js';
-import { db } from '../db/database.js';
-import { cache } from '../utils/cache.js';
-import { SearchParams, FilterParams, ExportFormat, SearchResponse, Study } from '../models/types.js';
-import { filterStudies, generateSessionId, formatStudySummary, formatStudyList } from '../utils/helpers.js';
-import { exportToCSV, exportToJSON, exportToJSONL } from '../utils/export.js';
+} from "@modelcontextprotocol/sdk/types.js";
+import { apiClient } from "../api/client.js";
+import { db } from "../db/database.js";
+import { cache } from "../utils/cache.js";
+import {
+  SearchParams,
+  FilterParams,
+  ExportFormat,
+  SearchResponse,
+  Study,
+} from "../models/types.js";
+import {
+  filterStudies,
+  generateSessionId,
+  formatStudySummary,
+  formatStudyList,
+} from "../utils/helpers.js";
+import { exportToCSV, exportToJSON, exportToJSONL } from "../utils/export.js";
 
 const server = new Server(
   {
-    name: 'clinical-trials-mcp',
-    version: '1.0.0',
+    name: "clinical-trials-mcp",
+    version: "1.0.0",
   },
   {
     capabilities: {
       tools: {},
     },
-  }
+  },
 );
 
 // List available tools
@@ -30,156 +41,167 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
   return {
     tools: [
       {
-        name: 'search_trials',
-        description: 'Search for clinical trials using various criteria. Returns a session ID for iterative refinement. Searches across 19 specialized areas including conditions, interventions, locations, sponsors, and more.',
+        name: "search_trials",
+        description:
+          "Search for clinical trials using various criteria. Returns a session ID for iterative refinement. Searches across 19 specialized areas including conditions, interventions, locations, sponsors, and more.",
         inputSchema: {
-          type: 'object',
+          type: "object",
           properties: {
             condition: {
-              type: 'string',
-              description: 'Medical condition or disease (e.g., "diabetes", "breast cancer", "COVID-19")',
+              type: "string",
+              description:
+                'Medical condition or disease (e.g., "diabetes", "breast cancer", "COVID-19")',
             },
             intervention: {
-              type: 'string',
-              description: 'Treatment or intervention (e.g., "pembrolizumab", "chemotherapy")',
+              type: "string",
+              description:
+                'Treatment or intervention (e.g., "pembrolizumab", "chemotherapy")',
             },
             phase: {
-              type: 'string',
-              description: 'Trial phase: "Phase 1", "Phase 2", "Phase 3", "Phase 4", or combinations like "Phase 2|Phase 3"',
+              type: "string",
+              description:
+                'Trial phase: "Phase 1", "Phase 2", "Phase 3", "Phase 4", or combinations like "Phase 2|Phase 3"',
             },
             status: {
-              type: 'string',
-              description: 'Recruitment status: "Recruiting", "Completed", "Active, not recruiting", "Terminated", etc.',
+              type: "string",
+              description:
+                'Recruitment status: "Recruiting", "Completed", "Active, not recruiting", "Terminated", etc.',
             },
             location: {
-              type: 'string',
-              description: 'Geographic location (country, state, or city)',
+              type: "string",
+              description: "Geographic location (country, state, or city)",
             },
             sponsorSearch: {
-              type: 'string',
-              description: 'Sponsor or collaborator organization name',
+              type: "string",
+              description: "Sponsor or collaborator organization name",
             },
             query: {
-              type: 'string',
-              description: 'General search query across all fields',
+              type: "string",
+              description: "General search query across all fields",
             },
             pageSize: {
-              type: 'number',
-              description: 'Number of results to return (1-1000, default 100)',
+              type: "number",
+              description: "Number of results to return (1-1000, default 100)",
               default: 100,
             },
           },
         },
       },
       {
-        name: 'refine_results',
-        description: 'Filter existing search results without making a new API call. Applies additional criteria to narrow down results from a previous search session.',
+        name: "refine_results",
+        description:
+          "Filter existing search results without making a new API call. Applies additional criteria to narrow down results from a previous search session.",
         inputSchema: {
-          type: 'object',
+          type: "object",
           properties: {
             sessionId: {
-              type: 'string',
-              description: 'Session ID from previous search_trials call',
+              type: "string",
+              description: "Session ID from previous search_trials call",
             },
             locationCountry: {
-              type: 'string',
-              description: 'Filter by country',
+              type: "string",
+              description: "Filter by country",
             },
             locationState: {
-              type: 'string',
-              description: 'Filter by state/province',
+              type: "string",
+              description: "Filter by state/province",
             },
             locationCity: {
-              type: 'string',
-              description: 'Filter by city',
+              type: "string",
+              description: "Filter by city",
             },
             enrollmentMin: {
-              type: 'number',
-              description: 'Minimum enrollment count',
+              type: "number",
+              description: "Minimum enrollment count",
             },
             enrollmentMax: {
-              type: 'number',
-              description: 'Maximum enrollment count',
+              type: "number",
+              description: "Maximum enrollment count",
             },
             startDateAfter: {
-              type: 'string',
-              description: 'Start date after (YYYY-MM-DD)',
+              type: "string",
+              description: "Start date after (YYYY-MM-DD)",
             },
             startDateBefore: {
-              type: 'string',
-              description: 'Start date before (YYYY-MM-DD)',
+              type: "string",
+              description: "Start date before (YYYY-MM-DD)",
             },
             interventionType: {
-              type: 'string',
-              description: 'Intervention type: "Drug", "Device", "Biological", "Behavioral", etc.',
+              type: "string",
+              description:
+                'Intervention type: "Drug", "Device", "Biological", "Behavioral", etc.',
             },
             hasResults: {
-              type: 'boolean',
-              description: 'Filter by whether trial has posted results',
+              type: "boolean",
+              description: "Filter by whether trial has posted results",
             },
           },
-          required: ['sessionId'],
+          required: ["sessionId"],
         },
       },
       {
-        name: 'get_trial_details',
-        description: 'Get detailed information about a specific clinical trial including full summary and eligibility criteria.',
+        name: "get_trial_details",
+        description:
+          "Get detailed information about a specific clinical trial including full summary and eligibility criteria.",
         inputSchema: {
-          type: 'object',
+          type: "object",
           properties: {
             nctId: {
-              type: 'string',
+              type: "string",
               description: 'NCT ID of the trial (e.g., "NCT12345678")',
             },
             includeEligibility: {
-              type: 'boolean',
-              description: 'Include detailed eligibility criteria',
+              type: "boolean",
+              description: "Include detailed eligibility criteria",
               default: true,
             },
           },
-          required: ['nctId'],
+          required: ["nctId"],
         },
       },
       {
-        name: 'summarize_session',
-        description: 'Get a summary of all trials in a search session with their key details.',
+        name: "summarize_session",
+        description:
+          "Get a summary of all trials in a search session with their key details.",
         inputSchema: {
-          type: 'object',
+          type: "object",
           properties: {
             sessionId: {
-              type: 'string',
-              description: 'Session ID from previous search',
+              type: "string",
+              description: "Session ID from previous search",
             },
             maxResults: {
-              type: 'number',
-              description: 'Maximum number of results to show in summary (default 10)',
+              type: "number",
+              description:
+                "Maximum number of results to show in summary (default 10)",
               default: 10,
             },
           },
-          required: ['sessionId'],
+          required: ["sessionId"],
         },
       },
       {
-        name: 'export_results',
-        description: 'Export search results to a file in CSV, JSON, or JSONL format.',
+        name: "export_results",
+        description:
+          "Export search results to a file in CSV, JSON, or JSONL format.",
         inputSchema: {
-          type: 'object',
+          type: "object",
           properties: {
             sessionId: {
-              type: 'string',
-              description: 'Session ID to export',
+              type: "string",
+              description: "Session ID to export",
             },
             format: {
-              type: 'string',
-              enum: ['csv', 'json', 'jsonl'],
-              description: 'Export format',
+              type: "string",
+              enum: ["csv", "json", "jsonl"],
+              description: "Export format",
             },
             outputPath: {
-              type: 'string',
-              description: 'Path to save the file',
+              type: "string",
+              description: "Path to save the file",
             },
           },
-          required: ['sessionId', 'format', 'outputPath'],
+          required: ["sessionId", "format", "outputPath"],
         },
       },
     ],
@@ -192,11 +214,11 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
   try {
     switch (name) {
-      case 'search_trials': {
+      case "search_trials": {
         const searchParams = args as unknown as SearchParams;
 
         // Check cache first
-        let cachedResponse = cache.get<SearchResponse>('search', searchParams);
+        let cachedResponse = cache.get<SearchResponse>("search", searchParams);
 
         let studies;
         if (cachedResponse) {
@@ -207,7 +229,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           studies = response.studies;
 
           // Cache response
-          cache.set('search', searchParams, response);
+          cache.set("search", searchParams, response);
           cache.saveRawResponse(response, searchParams);
         }
 
@@ -218,7 +240,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
         // Create session for refinement
         const sessionId = generateSessionId();
-        const nctIds = studies.map((s: Study) => s.protocolSection.identificationModule.nctId);
+        const nctIds = studies.map(
+          (s: Study) => s.protocolSection.identificationModule.nctId,
+        );
         db.createSession(sessionId, searchParams, nctIds);
 
         // Format output
@@ -227,15 +251,17 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         return {
           content: [
             {
-              type: 'text',
+              type: "text",
               text: `${summary}\n**Session ID:** ${sessionId}\n\nUse this session ID to refine results, get summaries, or export data.`,
             },
           ],
         };
       }
 
-      case 'refine_results': {
-        const { sessionId, ...filterParams } = args as unknown as { sessionId: string } & FilterParams;
+      case "refine_results": {
+        const { sessionId, ...filterParams } = args as unknown as {
+          sessionId: string;
+        } & FilterParams;
 
         // Get current session results
         const studies = db.getSessionResults(sessionId);
@@ -244,7 +270,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           return {
             content: [
               {
-                type: 'text',
+                type: "text",
                 text: `Session ${sessionId} not found or has no results.`,
               },
             ],
@@ -255,7 +281,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         const filteredStudies = filterStudies(studies, filterParams);
 
         // Update session with filtered results
-        const nctIds = filteredStudies.map(s => s.protocolSection.identificationModule.nctId);
+        const nctIds = filteredStudies.map(
+          (s) => s.protocolSection.identificationModule.nctId,
+        );
         db.updateSessionResults(sessionId, nctIds);
 
         const summary = formatStudyList(filteredStudies, 10);
@@ -263,14 +291,14 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         return {
           content: [
             {
-              type: 'text',
+              type: "text",
               text: `Filtered to ${filteredStudies.length} studies (from ${studies.length})\n\n${summary}`,
             },
           ],
         };
       }
 
-      case 'get_trial_details': {
+      case "get_trial_details": {
         const { nctId, includeEligibility = true } = args as {
           nctId: string;
           includeEligibility?: boolean;
@@ -290,14 +318,14 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         return {
           content: [
             {
-              type: 'text',
+              type: "text",
               text: summary,
             },
           ],
         };
       }
 
-      case 'summarize_session': {
+      case "summarize_session": {
         const { sessionId, maxResults = 10 } = args as {
           sessionId: string;
           maxResults?: number;
@@ -309,7 +337,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           return {
             content: [
               {
-                type: 'text',
+                type: "text",
                 text: `Session ${sessionId} not found or has no results.`,
               },
             ],
@@ -321,14 +349,14 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         return {
           content: [
             {
-              type: 'text',
+              type: "text",
               text: summary,
             },
           ],
         };
       }
 
-      case 'export_results': {
+      case "export_results": {
         const { sessionId, format, outputPath } = args as {
           sessionId: string;
           format: ExportFormat;
@@ -341,7 +369,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           return {
             content: [
               {
-                type: 'text',
+                type: "text",
                 text: `Session ${sessionId} not found or has no results.`,
               },
             ],
@@ -351,13 +379,13 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         // Export based on format
         let finalPath: string;
         switch (format) {
-          case 'csv':
+          case "csv":
             finalPath = await exportToCSV(studies, outputPath);
             break;
-          case 'json':
+          case "json":
             finalPath = await exportToJSON(studies, outputPath);
             break;
-          case 'jsonl':
+          case "jsonl":
             finalPath = await exportToJSONL(studies, outputPath);
             break;
           default:
@@ -367,7 +395,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         return {
           content: [
             {
-              type: 'text',
+              type: "text",
               text: `✓ Exported ${studies.length} studies to ${finalPath}`,
             },
           ],
@@ -382,7 +410,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     return {
       content: [
         {
-          type: 'text',
+          type: "text",
           text: `Error: ${errorMessage}`,
         },
       ],
@@ -395,11 +423,11 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 async function main() {
   const transport = new StdioServerTransport();
   await server.connect(transport);
-  
-  console.error('Clinical Trials MCP Server running on stdio');
+
+  console.error("Clinical Trials MCP Server running on stdio");
 }
 
 main().catch((error) => {
-  console.error('Fatal error:', error);
+  console.error("Fatal error:", error);
   process.exit(1);
 });

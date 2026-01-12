@@ -1,6 +1,12 @@
-import { SearchParams, SearchResponse, SearchResponseSchema, Study, StudySchema } from '../models/types.js';
+import {
+  SearchParams,
+  SearchResponse,
+  SearchResponseSchema,
+  Study,
+  StudySchema,
+} from "../models/types.js";
 
-const BASE_URL = 'https://clinicaltrials.gov/api/v2';
+const BASE_URL = "https://clinicaltrials.gov/api/v2";
 const DEFAULT_PAGE_SIZE = 100;
 const MAX_RETRIES = 3;
 const RETRY_DELAY_MS = 1000;
@@ -44,7 +50,7 @@ export class ClinicalTrialsAPIClient {
     }
 
     // Combine with AND
-    return parts.length > 0 ? parts.join(' AND ') : '';
+    return parts.length > 0 ? parts.join(" AND ") : "";
   }
 
   /**
@@ -55,25 +61,28 @@ export class ClinicalTrialsAPIClient {
 
     const query = this.buildQuery(params);
     if (query) {
-      urlParams.set('query.term', query);
+      urlParams.set("query.term", query);
     }
 
     // Status must be uppercase (e.g., RECRUITING, COMPLETED)
     if (params.status) {
-      urlParams.set('filter.overallStatus', params.status.toUpperCase());
+      urlParams.set("filter.overallStatus", params.status.toUpperCase());
     }
 
-    urlParams.set('pageSize', (params.pageSize || DEFAULT_PAGE_SIZE).toString());
+    urlParams.set(
+      "pageSize",
+      (params.pageSize || DEFAULT_PAGE_SIZE).toString(),
+    );
 
     if (params.pageToken) {
-      urlParams.set('pageToken', params.pageToken);
+      urlParams.set("pageToken", params.pageToken);
     }
 
     if (params.fields && params.fields.length > 0) {
-      urlParams.set('fields', params.fields.join(','));
+      urlParams.set("fields", params.fields.join(","));
     }
 
-    urlParams.set('countTotal', 'true');
+    urlParams.set("countTotal", "true");
 
     return urlParams;
   }
@@ -81,13 +90,16 @@ export class ClinicalTrialsAPIClient {
   /**
    * Fetch with retry logic
    */
-  private async fetchWithRetry(url: string, retries = MAX_RETRIES): Promise<Response> {
+  private async fetchWithRetry(
+    url: string,
+    retries = MAX_RETRIES,
+  ): Promise<Response> {
     let lastError: Error | null = null;
 
     for (let i = 0; i < retries; i++) {
       try {
         const response = await fetch(url);
-        
+
         if (!response.ok) {
           throw new Error(`HTTP ${response.status}: ${response.statusText}`);
         }
@@ -95,10 +107,12 @@ export class ClinicalTrialsAPIClient {
         return response;
       } catch (error) {
         lastError = error as Error;
-        
+
         if (i < retries - 1) {
           // Exponential backoff
-          await new Promise(resolve => setTimeout(resolve, RETRY_DELAY_MS * Math.pow(2, i)));
+          await new Promise((resolve) =>
+            setTimeout(resolve, RETRY_DELAY_MS * Math.pow(2, i)),
+          );
         }
       }
     }
@@ -125,15 +139,15 @@ export class ClinicalTrialsAPIClient {
    */
   async getStudy(nctId: string, fields?: string[]): Promise<Study> {
     const urlParams = new URLSearchParams();
-    
+
     if (fields && fields.length > 0) {
-      urlParams.set('fields', fields.join(','));
+      urlParams.set("fields", fields.join(","));
     }
 
-    const url = `${this.baseUrl}/studies/${nctId}${fields ? `?${urlParams.toString()}` : ''}`;
+    const url = `${this.baseUrl}/studies/${nctId}${fields ? `?${urlParams.toString()}` : ""}`;
 
     const response = await this.fetchWithRetry(url);
-    const data = await response.json() as any;
+    const data = (await response.json()) as any;
 
     // The response wraps the study in a studies array
     if (data.studies && data.studies.length > 0) {
@@ -146,7 +160,9 @@ export class ClinicalTrialsAPIClient {
   /**
    * Get all results by following pagination
    */
-  async *searchAll(params: SearchParams): AsyncGenerator<Study[], void, unknown> {
+  async *searchAll(
+    params: SearchParams,
+  ): AsyncGenerator<Study[], void, unknown> {
     let nextPageToken: string | undefined = undefined;
     let hasMore = true;
 
@@ -167,7 +183,10 @@ export class ClinicalTrialsAPIClient {
   async getVersion(): Promise<{ apiVersion: string; dataTimestamp: string }> {
     const url = `${this.baseUrl}/version`;
     const response = await this.fetchWithRetry(url);
-    return await response.json() as { apiVersion: string; dataTimestamp: string };
+    return (await response.json()) as {
+      apiVersion: string;
+      dataTimestamp: string;
+    };
   }
 
   /**
@@ -176,7 +195,10 @@ export class ClinicalTrialsAPIClient {
   async getStats(): Promise<{ studyCount: number; lastUpdateDate: string }> {
     const url = `${this.baseUrl}/stats/size`;
     const response = await this.fetchWithRetry(url);
-    return await response.json() as { studyCount: number; lastUpdateDate: string };
+    return (await response.json()) as {
+      studyCount: number;
+      lastUpdateDate: string;
+    };
   }
 }
 

@@ -1,8 +1,8 @@
-import fs from 'fs';
-import path from 'path';
-import { SearchResponse } from '../models/types.js';
+import fs from "fs";
+import path from "path";
+import { SearchResponse } from "../models/types.js";
 
-const CACHE_DIR = './cache';
+const CACHE_DIR = "./cache";
 const MEMORY_CACHE_TTL_MS = 60 * 1000; // 1 minute
 const DISK_CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
 
@@ -40,7 +40,7 @@ export class CacheManager {
     let hash = 0;
     for (let i = 0; i < str.length; i++) {
       const char = str.charCodeAt(i);
-      hash = ((hash << 5) - hash) + char;
+      hash = (hash << 5) - hash + char;
       hash = hash & hash; // Convert to 32-bit integer
     }
     return Math.abs(hash).toString(36);
@@ -51,7 +51,7 @@ export class CacheManager {
    */
   private getFromMemory<T>(key: string): T | null {
     const entry = this.memoryCache.get(key);
-    
+
     if (!entry) {
       return null;
     }
@@ -93,7 +93,7 @@ export class CacheManager {
     }
 
     try {
-      const content = fs.readFileSync(filePath, 'utf-8');
+      const content = fs.readFileSync(filePath, "utf-8");
       const entry: CacheEntry<T> = JSON.parse(content);
 
       const age = Date.now() - entry.timestamp;
@@ -120,7 +120,7 @@ export class CacheManager {
       timestamp: Date.now(),
     };
 
-    fs.writeFileSync(filePath, JSON.stringify(entry, null, 2), 'utf-8');
+    fs.writeFileSync(filePath, JSON.stringify(entry, null, 2), "utf-8");
   }
 
   /**
@@ -159,7 +159,7 @@ export class CacheManager {
    * Save raw API response to JSONL file
    */
   saveRawResponse(response: SearchResponse, params: any): void {
-    const date = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
+    const date = new Date().toISOString().split("T")[0]; // YYYY-MM-DD
     const jsonlPath = path.join(this.cacheDir, `raw-${date}.jsonl`);
 
     const line = JSON.stringify({
@@ -168,7 +168,7 @@ export class CacheManager {
       response,
     });
 
-    fs.appendFileSync(jsonlPath, line + '\n', 'utf-8');
+    fs.appendFileSync(jsonlPath, line + "\n", "utf-8");
   }
 
   /**
@@ -200,11 +200,11 @@ export class CacheManager {
     const files = fs.readdirSync(this.cacheDir);
     for (const file of files) {
       const filePath = path.join(this.cacheDir, file);
-      
+
       try {
-        const content = fs.readFileSync(filePath, 'utf-8');
+        const content = fs.readFileSync(filePath, "utf-8");
         const entry = JSON.parse(content);
-        
+
         const age = now - entry.timestamp;
         if (age > DISK_CACHE_TTL_MS) {
           fs.unlinkSync(filePath);
