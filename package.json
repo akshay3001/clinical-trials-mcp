@@ -1,17 +1,13 @@
 {
   "name": "clinical-trials-mcp",
   "version": "1.0.0",
-  "description": "MCP server and CLI for searching and analyzing clinical trials from ClinicalTrials.gov",
+  "description": "MCP server for searching and analyzing clinical trials from ClinicalTrials.gov",
   "type": "module",
   "main": "dist/index.js",
-  "bin": {
-    "clinicaltrials": "./dist/cli/index.js"
-  },
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch",
     "start:mcp": "node dist/mcp/server.js",
-    "start:cli": "node dist/cli/index.js",
     "format": "prettier --write src/**/*.ts"
   },
   "keywords": [
@@ -26,7 +22,6 @@
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.4",
     "better-sqlite3": "^11.7.0",
-    "commander": "^12.1.0",
     "papaparse": "^5.4.1",
     "zod": "^3.24.1"
   },

@@ -71,7 +71,6 @@ Export in multiple formats:
 - **Database Layer**: SQLite with normalized schema and full-text search
 - **Caching**: Two-tier caching (memory + disk) for performance
 - **MCP Server**: Model Context Protocol interface for AI assistants
-- **CLI**: Command-line interface for direct usage
 
 ## License
 

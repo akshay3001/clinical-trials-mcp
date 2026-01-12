@@ -2,7 +2,7 @@
 
 ## Architecture Overview
 
-**Dual Interface:** MCP server for AI assistants + CLI for terminal usage, both sharing core library.
+**MCP Server Interface:** Model Context Protocol server for AI assistants using shared core library.
 
 **On-Demand Data Model:** No full database download. Studies fetched and cached only when searched. Database grows organically (hundreds, not millions).
 
@@ -76,7 +76,6 @@ urlParams.set('filter.overallStatus', params.status.toUpperCase());
 - **[src/utils/helpers.ts](src/utils/helpers.ts):** `filterStudies()`, `formatStudySummary()`, `generateSessionId()`
 - **[src/models/types.ts](src/models/types.ts):** Zod schemas for API responses + TypeScript types
 - **[src/mcp/server.ts](src/mcp/server.ts):** 5 MCP tools (search, refine, details, summarize, export)
-- **[src/cli/index.ts](src/cli/index.ts):** Commander.js CLI (search, filter, export, stats, clear-cache)
 
 ## Database Schema Essentials
 
@@ -96,33 +95,19 @@ urlParams.set('filter.overallStatus', params.status.toUpperCase());
 2. Add case in `CallToolRequestSchema` handler  
 3. Return `{ content: [{ type: 'text', text: '...' }] }` or `{ ..., isError: true }`
 
-### Adding CLI Command
-```typescript
-program.command('newcmd')
-  .option('--flag <value>', 'Description')
-  .action(async (options) => {
-    try { /* logic */ } 
-    catch (error) { 
-      console.error('Error:', error.message); 
-      process.exit(1); 
-    }
-  });
-```
-
 ### Adding Filter
 1. Add to `FilterParams` interface in [types.ts](src/models/types.ts)
 2. Update `filterStudies()` in [helpers.ts](src/utils/helpers.ts)
-3. Add to MCP `refine_results` inputSchema + CLI `filter` options
+3. Add to MCP `refine_results` inputSchema
 
 ### Adding Export Format
 1. Create function in [export.ts](src/utils/export.ts)
 2. Add to `ExportFormat` type in [types.ts](src/models/types.ts)
-3. Add case in MCP server + CLI handlers
+3. Add case in MCP server handler
 
 ## Error Handling Conventions
 
 - **API Client:** Auto-retry with exponential backoff (no user intervention)
-- **CLI:** `try/catch`, log user-friendly message, `process.exit(1)`
 - **MCP:** Return error in `content` array with `isError: true` flag
 
 ## Development Commands
@@ -130,7 +115,6 @@ program.command('newcmd')
 ```bash
 npm run build           # Compile TypeScript (src/ → dist/)
 npm run dev             # Watch mode compilation
-node dist/cli/index.js search --condition "diabetes" --status "Recruiting"
 node dist/mcp/server.js # MCP server (stdio, for Claude Desktop)
 sqlite3 data/clinical-trials.db ".tables"  # Inspect database
 ```
@@ -139,7 +123,7 @@ sqlite3 data/clinical-trials.db ".tables"  # Inspect database
 
 **Database locked:** Close other connections or `rm -rf data/`  
 **MCP not in Claude:** Check absolute path in `claude_desktop_config.json`, rebuild, restart Claude  
-**Empty results:** Verify API accessible, check cache corruption with `clear-cache` command  
+**Empty results:** Verify API accessible, check cache files in `cache/` directory  
 **TS errors:** Verify `.js` extensions on imports, Zod schemas match API shape
 
 ## Performance Notes

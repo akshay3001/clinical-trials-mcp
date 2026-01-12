@@ -217,27 +217,6 @@ Search for cystic fibrosis trials accepting children, then filter to:
 
 ---
 
-## Quick Validation Commands
-
-After implementation, run these **CLI equivalents** to verify:
-
-```bash
-# Test Phase 1
-node dist/cli/index.js search --condition "diabetes" --status "Recruiting"
-node dist/cli/index.js filter <session_id> --study-type "INTERVENTIONAL" --healthy-volunteers
-
-# Test Phase 2
-node dist/cli/index.js filter <session_id> --allocation "RANDOMIZED" --min-age "18 Years"
-
-# Test Phase 3
-node dist/cli/index.js filter <session_id> --masking "DOUBLE" --fda-regulated --keyword "biomarker"
-
-# Export test
-node dist/cli/index.js export <session_id> --format csv --output test.csv
-```
-
----
-
 ## Expected Output Patterns
 
 **Successful Filter:**
