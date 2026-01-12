@@ -1,0 +1,47 @@
+{
+  "name": "clinical-trials-mcp",
+  "version": "1.0.0",
+  "description": "MCP server and CLI for searching and analyzing clinical trials from ClinicalTrials.gov",
+  "type": "module",
+  "main": "dist/index.js",
+  "bin": {
+    "clinicaltrials": "./dist/cli/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "start:mcp": "node dist/mcp/server.js",
+    "start:cli": "node dist/cli/index.js",
+    "test": "vitest",
+    "lint": "eslint src/**/*.ts",
+    "format": "prettier --write src/**/*.ts"
+  },
+  "keywords": [
+    "clinical-trials",
+    "mcp",
+    "medical-research",
+    "healthcare",
+    "data-extraction"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.4",
+    "better-sqlite3": "^11.7.0",
+    "commander": "^12.1.0",
+    "papaparse": "^5.4.1",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.12",
+    "@types/node": "^22.10.2",
+    "@types/papaparse": "^5.3.15",
+    "@typescript-eslint/eslint-plugin": "^8.18.2",
+    "@typescript-eslint/parser": "^8.18.2",
+    "eslint": "^9.17.0",
+    "prettier": "^3.4.2",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  }
+}

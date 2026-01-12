@@ -1,0 +1,12 @@
+node_modules/
+dist/
+*.log
+.env
+.DS_Store
+*.db
+*.db-*
+cache/
+data/
+exports/
+.vscode/
+*.tsbuildinfo
