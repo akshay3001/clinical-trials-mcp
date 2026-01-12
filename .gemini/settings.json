@@ -1,0 +1,12 @@
+{
+  "ui": {
+    "theme": "Default"
+  },
+  "security": {},
+  "mcpServers": {
+    "clinical-trials": {
+      "command": "node",
+      "args": ["./dist/mcp/server.js"]
+    }
+  }
+}
