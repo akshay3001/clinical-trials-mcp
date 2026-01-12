@@ -1,387 +1,157 @@
-# GitHub Copilot Instructions - Clinical Trials MCP Server
+# Copilot Instructions - Clinical Trials MCP Server
 
-## Project Overview
+## Architecture Overview
 
-This is a **Clinical Trials data extraction and analysis tool** that provides both:
-1. **MCP (Model Context Protocol) Server** for AI assistants like Claude Desktop
-2. **CLI (Command Line Interface)** for direct terminal usage
+**Dual Interface:** MCP server for AI assistants + CLI for terminal usage, both sharing core library.
 
-Both interfaces share the same core library for searching, filtering, and exporting clinical trial data from ClinicalTrials.gov API v2.
+**On-Demand Data Model:** No full database download. Studies fetched and cached only when searched. Database grows organically (hundreds, not millions).
 
-## Technology Stack
-
-- **Language**: TypeScript (compiled to JavaScript/ESM)
-- **Runtime**: Node.js (ES Modules)
-- **Database**: SQLite via better-sqlite3
-- **API**: ClinicalTrials.gov API v2 (REST, no auth required)
-- **Validation**: Zod schemas
-- **CLI**: Commander.js
-- **CSV Export**: PapaParse
-- **MCP SDK**: @modelcontextprotocol/sdk
-
-## Project Structure
-
+**Iterative Refinement Workflow:**
 ```
-src/
-├── api/
-│   └── client.ts           # ClinicalTrials.gov API client with retry logic
-├── db/
-│   └── database.ts         # SQLite manager with session support
-├── mcp/
-│   └── server.ts          # MCP server with 5 tools for AI assistants
-├── cli/
-│   └── index.ts           # CLI commands (search, filter, export, etc.)
-├── models/
-│   └── types.ts           # TypeScript types & Zod schemas
-└── utils/
-    ├── cache.ts           # Two-tier caching (memory + disk)
-    ├── export.ts          # CSV/JSON/JSONL export functions
-    └── helpers.ts         # Filtering, formatting, session utilities
+Search (API) → Session + Cache → Filter (local) → Filter (local) → Export
 ```
+Sessions store NCT IDs for filtering cached results without API re-queries.
 
-## Core Architecture Patterns
+## Critical Patterns
 
-### 1. On-Demand Data Loading
-- **No full database download** on startup
-- Data fetched **only when searched**
-- Database grows organically based on user queries
-- Typical database: few hundred studies, not 500,000+
-
-### 2. Iterative Refinement Workflow
-```
-Initial Search (API call) → Session Created → Results Cached
-    ↓
-Filter #1 (local query) → Session Updated → No API call
-    ↓
-Filter #2 (local query) → Session Updated → No API call
-    ↓
-Export → Read from session → Generate file
-```
-
-### 3. Three-Layer Data Storage
-
-**Layer 1: API Response Cache**
-- In-memory: 1 minute TTL
-- Disk: 24 hour TTL  
-- JSONL backup: Raw API responses preserved
-
-**Layer 2: SQLite Database**
-- Normalized schema (studies, conditions, interventions, locations)
-- Full-text search index (FTS5)
-- Session management for refinement
-- Fast queries and filtering
-
-**Layer 3: Export Files**
-- Organized in `exports/` folder by format
-- CSV/JSON/JSONL options
-- Generated only when requested
-
-### 4. Hybrid Storage Strategy
-
-**SQLite for:**
-- Fast queries and filtering
-- Relational data (conditions, locations)
-- Full-text search
-- Session persistence
-
-**JSONL for:**
-- Complete API response preservation
-- No schema constraints
-- Debugging and audit trail
-
-**CSV/JSON for:**
-- Final export only (not storage)
-- User-facing data sharing
-
-## Key Design Decisions
-
-### 1. Singleton Pattern for Database & Cache
+### 1. ESM Import Convention (TypeScript)
 ```typescript
-// database.ts
-export const db = new DatabaseManager();
+// ALWAYS use .js extension for imports (ESM requirement)
+import { db } from '../db/database.js';  // ✓ Correct
+import { db } from '../db/database';    // ✗ Wrong - compilation fails
+```
 
-// Usage everywhere:
+### 2. Singleton Services
+```typescript
+// src/db/database.ts, src/utils/cache.ts, src/api/client.ts
+export const db = new DatabaseManager();
+export const cache = new CacheManager();
+export const apiClient = new ClinicalTrialsAPIClient();
+
+// Import and use directly (no instantiation)
 import { db } from '../db/database.js';
 db.upsertStudy(study);
 ```
 
-**Why:** Single connection, consistent state, automatic initialization.
-
-### 2. Session-Based Refinement
-Every search creates a session ID that stores:
-- Original search parameters
-- List of NCT IDs (study identifiers)
-- Timestamp for cleanup
-
-**Why:** Enables filtering cached results without re-querying API.
-
 ### 3. Upsert Pattern for Studies
-```typescript
+```sql
 INSERT INTO studies (...) VALUES (...)
-ON CONFLICT(nct_id) DO UPDATE SET ...
+ON CONFLICT(nct_id) DO UPDATE SET ... -- Update if exists
 ```
+Database accepts both new and updated trial data.
 
-**Why:** Handles both new trials and updates to existing ones.
+### 4. Three-Layer Storage
+- **Memory Cache:** 1min TTL (instant re-queries)
+- **Disk Cache:** 24hr TTL + JSONL audit trail (preserves raw API responses)
+- **SQLite:** Normalized schema with FTS5 search + session management
 
-### 4. Export Path Organization
+### 5. Session-Based Refinement
+Every search creates session with search params + NCT ID list. Filters work on sessions without API calls.
 ```typescript
-// Simple filename → Auto-organized
-exportToCSV(studies, 'diabetes.csv')
-// → ./exports/csv/diabetes.csv
-
-// Full path → Respected
-exportToCSV(studies, '/path/to/file.csv')
-// → /path/to/file.csv
+const sessionId = generateSessionId(); // session_1234567890_abc123
+db.createSession(sessionId, searchParams, nctIds);
 ```
 
-**Why:** Clean workspace, easy to find files, still flexible.
+## ClinicalTrials.gov API Specifics
 
-## Important Conventions
-
-### File Imports
-Always use `.js` extension for TypeScript imports (ESM requirement):
+**Query Syntax:** `AREA[FieldName]query` combined with AND
 ```typescript
-// Correct
-import { db } from '../db/database.js';
-
-// Wrong
-import { db } from '../db/database';
+// Example: "AREA[ConditionSearch]diabetes AND AREA[LocationSearch]California"
 ```
 
-### Error Handling
-- API client: Exponential backoff retry (3 attempts)
-- CLI: Exit with code 1 on error, display user-friendly message
-- MCP: Return error in content with `isError: true`
-
-### Async/Await
-Use async/await throughout, not callbacks or raw promises:
+**Status Filter:** Must be UPPERCASE (e.g., `RECRUITING`, not `recruiting`)
 ```typescript
-// Correct
-const study = await apiClient.getStudy(nctId);
-
-// Avoid
-apiClient.getStudy(nctId).then(study => { ... });
+urlParams.set('filter.overallStatus', params.status.toUpperCase());
 ```
 
-### Type Safety
-- All API responses validated with Zod schemas
-- Strong typing throughout (no `any` except for external data)
-- Use type assertions carefully: `as unknown as Type`
+**Retry Logic:** 3 attempts with exponential backoff (1s, 2s, 4s) in `fetchWithRetry()`
 
-## Database Schema Quick Reference
+**Pagination:** Max 1000 per page. Use `pageToken` for next page. Set `countTotal=true` for total count.
 
-**Main Tables:**
-- `studies` - Core trial data + raw JSON blob
-- `conditions` - Many-to-many with studies
-- `interventions` - Many-to-many with studies  
-- `locations` - Many-to-many with studies
-- `keywords` - Many-to-many with studies
-- `search_sessions` - Session metadata
-- `session_results` - Many-to-many sessions ↔ studies
+## Key Files & Responsibilities
 
-**Key Indexes:**
-- Status, phase, start_date on studies
-- Condition, country, state, city on related tables
-- Full-text search on `studies_fts` virtual table
+- **[src/api/client.ts](src/api/client.ts):** API client with retry logic, query building, Zod validation
+- **[src/db/database.ts](src/db/database.ts):** SQLite manager with FTS5, sessions, upsert logic
+- **[src/utils/cache.ts](src/utils/cache.ts):** Two-tier cache (memory + disk), JSONL raw backup
+- **[src/utils/helpers.ts](src/utils/helpers.ts):** `filterStudies()`, `formatStudySummary()`, `generateSessionId()`
+- **[src/models/types.ts](src/models/types.ts):** Zod schemas for API responses + TypeScript types
+- **[src/mcp/server.ts](src/mcp/server.ts):** 5 MCP tools (search, refine, details, summarize, export)
+- **[src/cli/index.ts](src/cli/index.ts):** Commander.js CLI (search, filter, export, stats, clear-cache)
 
-## ClinicalTrials.gov API Notes
+## Database Schema Essentials
 
-**Base URL:** `https://clinicaltrials.gov/api/v2`
+**Core Tables:**
+- `studies` - Main table with `raw_json` column (full API response) + normalized fields
+- `conditions`, `interventions`, `locations`, `keywords` - Many-to-many relations
+- `search_sessions` + `session_results` - Session management for refinement
 
-**Key Endpoints:**
-- `GET /studies` - Search trials
-- `GET /studies/{nctId}` - Get specific trial
-- `GET /version` - API version and data timestamp
-- `GET /stats/size` - Database statistics
+**Full-Text Search:** `studies_fts` virtual table (FTS5) indexes title, summary, description. Auto-synced via triggers.
 
-**Search Areas (19 total):**
-- `BasicSearch` - General (default)
-- `ConditionSearch` - Diseases
-- `InterventionSearch` - Treatments
-- `LocationSearch` - Geographic
-- And 15 more...
+**Indexes:** Status, phase, start_date on studies; condition, country, state on related tables.
 
-**Query Syntax:**
+## Common Development Tasks
+
+### Adding MCP Tool
+1. Add tool definition in `ListToolsRequestSchema` handler
+2. Add case in `CallToolRequestSchema` handler  
+3. Return `{ content: [{ type: 'text', text: '...' }] }` or `{ ..., isError: true }`
+
+### Adding CLI Command
+```typescript
+program.command('newcmd')
+  .option('--flag <value>', 'Description')
+  .action(async (options) => {
+    try { /* logic */ } 
+    catch (error) { 
+      console.error('Error:', error.message); 
+      process.exit(1); 
+    }
+  });
 ```
-AREA[FieldName]query
-Example: AREA[ConditionSearch]diabetes AND AREA[LocationSearch]California
-```
 
-**Rate Limits:**
-- None documented
-- Be respectful: 1-2 requests/second recommended
-- Caching minimizes API calls
+### Adding Filter
+1. Add to `FilterParams` interface in [types.ts](src/models/types.ts)
+2. Update `filterStudies()` in [helpers.ts](src/utils/helpers.ts)
+3. Add to MCP `refine_results` inputSchema + CLI `filter` options
 
-**Pagination:**
-- Max pageSize: 1000
-- Use pageToken for next page
-- Set countTotal=true for total count
+### Adding Export Format
+1. Create function in [export.ts](src/utils/export.ts)
+2. Add to `ExportFormat` type in [types.ts](src/models/types.ts)
+3. Add case in MCP server + CLI handlers
 
-## Common Tasks
+## Error Handling Conventions
 
-### Adding a New MCP Tool
-1. Add tool definition in `server.setRequestHandler(ListToolsRequestSchema, ...)`
-2. Add case in `server.setRequestHandler(CallToolRequestSchema, ...)`
-3. Implement logic using existing utilities
-4. Return result in `{ content: [{ type: 'text', text: '...' }] }` format
+- **API Client:** Auto-retry with exponential backoff (no user intervention)
+- **CLI:** `try/catch`, log user-friendly message, `process.exit(1)`
+- **MCP:** Return error in `content` array with `isError: true` flag
 
-### Adding a New CLI Command
-1. Add command in `src/cli/index.ts` using `.command()`
-2. Add options with `.option()` or `.requiredOption()`
-3. Implement `.action()` handler
-4. Use try/catch, exit with code 1 on error
+## Development Commands
 
-### Adding a New Filter
-1. Add property to `FilterParams` in `types.ts`
-2. Update `filterStudies()` in `helpers.ts`
-3. Add to MCP tool `refine_results` inputSchema
-4. Add to CLI `filter` command options
-
-### Adding a New Export Format
-1. Create export function in `export.ts`
-2. Update `ExportFormat` type in `types.ts`
-3. Add case in MCP server and CLI export handlers
-4. Ensure it uses `getExportPath()` for organization
-
-## Testing Approach
-
-**Manual Testing Commands:**
 ```bash
-# Build
-npm run build
-
-# Test CLI
-node dist/cli/index.js stats
+npm run build           # Compile TypeScript (src/ → dist/)
+npm run dev             # Watch mode compilation
 node dist/cli/index.js search --condition "diabetes" --status "Recruiting"
-
-# Test MCP (requires Claude Desktop setup)
-# See claude_desktop_config.example.json
+node dist/mcp/server.js # MCP server (stdio, for Claude Desktop)
+sqlite3 data/clinical-trials.db ".tables"  # Inspect database
 ```
 
-**Database Inspection:**
-```bash
-sqlite3 data/clinical-trials.db ".tables"
-sqlite3 data/clinical-trials.db "SELECT COUNT(*) FROM studies;"
-```
+## Debugging Tips
 
-## Code Style Guidelines
+**Database locked:** Close other connections or `rm -rf data/`  
+**MCP not in Claude:** Check absolute path in `claude_desktop_config.json`, rebuild, restart Claude  
+**Empty results:** Verify API accessible, check cache corruption with `clear-cache` command  
+**TS errors:** Verify `.js` extensions on imports, Zod schemas match API shape
 
-### Naming
-- Files: kebab-case (`clinical-trials.db`)
-- Classes: PascalCase (`DatabaseManager`)
-- Functions: camelCase (`upsertStudy`)
-- Constants: UPPER_SNAKE_CASE (`DEFAULT_DB_PATH`)
+## Performance Notes
 
-### Comments
-- JSDoc for public functions
-- Inline comments for complex logic
-- Explain "why" not "what"
-
-### Function Size
-- Keep functions focused and small
-- Extract complex logic into utilities
-- Maximum ~50 lines per function
-
-## Performance Considerations
-
-**Fast Operations (<100ms):**
-- Memory cache hits
-- Disk cache hits
-- SQLite queries with indexes
-- Session result filtering
-
-**Moderate Operations (1-5s):**
-- First API search
-- Storing 100 studies in database
-- Full-text search across thousands
-
-**Slow Operations (>5s):**
-- Paginated searches (multiple API calls)
-- Exporting thousands of studies
-- Cold start API calls with retries
-
-## Security Notes
-
-- No authentication required for ClinicalTrials.gov API
-- No user credentials stored
-- All data is public clinical trial information
-- SQLite database is local (no remote access)
-- Cache files contain public data only
-
-## Future Enhancement Ideas
-
-When extending this project, consider:
-- Refresh command to update stale data
-- Background sync for monitoring trials
-- AI-powered summarization (optional, requires API keys)
-- Geographic visualization with maps
-- Trend analysis across time
-- Comparison tools for multiple trials
-- Web interface (React/Next.js)
-- GraphQL API layer
-
-## Troubleshooting Tips
-
-**"Database is locked" error:**
-- Close other connections to the database
-- Check for zombie processes
-- Delete database and recreate: `rm -rf data/`
-
-**MCP server not appearing in Claude:**
-- Verify absolute path in `claude_desktop_config.json`
-- Ensure project is built: `npm run build`
-- Restart Claude Desktop completely
-- Check logs: `~/Library/Logs/Claude/`
-
-**TypeScript compilation errors:**
-- Ensure `.js` extensions on all imports
-- Check Zod schema matches API response
-- Verify `as unknown as Type` for complex casts
-
-**Empty search results:**
-- Check if ClinicalTrials.gov API is accessible
-- Verify search parameters are valid
-- Check cache hasn't corrupted: `clinicaltrials clear-cache`
-
-## File Extension Context
-
-When working on this project, remember:
-- `.ts` files are TypeScript source (in `src/`)
-- `.js` files are compiled output (in `dist/`)
-- `.db` files are SQLite databases (in `data/`)
-- `.jsonl` files are cache backups (in `cache/`)
-- `.csv/.json` files are exports (in `exports/`)
-
-## Quick Reference Commands
-
-```bash
-# Development
-npm install          # Install dependencies
-npm run build       # Compile TypeScript
-npm run dev         # Watch mode compilation
-
-# CLI Usage
-node dist/cli/index.js search --condition "diabetes"
-node dist/cli/index.js filter --session <id> --country "USA"
-node dist/cli/index.js export --session <id> --format csv --output file.csv
-node dist/cli/index.js stats
-node dist/cli/index.js clear-cache
-
-# Database
-sqlite3 data/clinical-trials.db ".tables"
-sqlite3 data/clinical-trials.db "SELECT * FROM studies LIMIT 5;"
-
-# MCP Server
-node dist/mcp/server.js  # Runs on stdio (used by Claude Desktop)
-```
+- **Fast (<100ms):** Cache hits, indexed SQLite queries, session filtering
+- **Moderate (1-5s):** First API search, database upserts, FTS queries
+- **Slow (>5s):** Paginated searches (multiple API calls), large exports
 
 ## Remember
 
-1. **Data is lazy-loaded** - never assume full dataset is available
-2. **Sessions enable refinement** - always create sessions on search
-3. **Cache expires** - 1 min memory, 24hr disk
-4. **Exports are organized** - auto-creates `exports/{format}/` folders
-5. **Database is local** - grows based on user searches, not full download
-6. **MCP and CLI share code** - changes to core affect both interfaces
-
-This is a research tool designed for flexibility, performance, and ease of use by both humans (CLI) and AI assistants (MCP).
+1. **Always `.js` extension** on TypeScript imports (ESM)
+2. **Uppercase status filters** for API (`RECRUITING` not `recruiting`)
+3. **Sessions enable refinement** without API re-queries
+4. **Upsert pattern** handles new + updated trials
+5. **No full download** - data loaded on demand only
