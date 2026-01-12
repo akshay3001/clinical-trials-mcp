@@ -86,7 +86,8 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             },
             fetchAll: {
               type: "boolean",
-              description: "Fetch all results using pagination (may take longer for large result sets)",
+              description:
+                "Fetch all results using pagination (may take longer for large result sets)",
               default: false,
             },
           },
@@ -316,7 +317,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   try {
     switch (name) {
       case "search_trials": {
-        const { fetchAll, ...searchParams } = args as unknown as SearchParams & { fetchAll?: boolean };
+        const { fetchAll, ...searchParams } =
+          args as unknown as SearchParams & { fetchAll?: boolean };
 
         // Check cache first
         let cachedResponse = cache.get<SearchResponse>("search", searchParams);
