@@ -53,6 +53,8 @@ interface CSVRow {
   CompletionDate: string;
   Conditions: string;
   Interventions: string;
+  PrimaryOutcomes: string;
+  SecondaryOutcomes: string;
   Locations: string;
   Sponsor: string;
   Summary: string;
@@ -77,6 +79,7 @@ export async function exportToCSV(
     const design = protocol.designModule;
     const eligibility = protocol.eligibilityModule;
     const interventions = protocol.armsInterventionsModule;
+    const outcomes = protocol.outcomesModule;
     const locations = protocol.contactsLocationsModule;
     const sponsor = protocol.sponsorCollaboratorsModule;
 
@@ -93,6 +96,10 @@ export async function exportToCSV(
         interventions?.interventions
           ?.map((i) => `${i.type}: ${i.name}`)
           .join("; ") || "",
+      PrimaryOutcomes:
+        outcomes?.primaryOutcomes?.map((o) => o.measure).join("; ") || "",
+      SecondaryOutcomes:
+        outcomes?.secondaryOutcomes?.map((o) => o.measure).join("; ") || "",
       Locations:
         locations?.locations
           ?.map((l) => {

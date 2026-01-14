@@ -53,6 +53,14 @@ export class DatabaseManager {
         healthy_volunteers BOOLEAN,
         lead_sponsor_name TEXT,
         lead_sponsor_class TEXT,
+        -- New denormalized fields for efficient filtering
+        allocation TEXT,
+        intervention_model TEXT,
+        primary_purpose TEXT,
+        masking TEXT,
+        is_fda_regulated_drug BOOLEAN,
+        is_fda_regulated_device BOOLEAN,
+        age_groups TEXT,
         raw_json TEXT NOT NULL,
         fetched_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -98,6 +106,26 @@ export class DatabaseManager {
         UNIQUE(nct_id, keyword)
       );
 
+      -- Primary outcomes (many-to-many)
+      CREATE TABLE IF NOT EXISTS primary_outcomes (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        nct_id TEXT NOT NULL REFERENCES studies(nct_id) ON DELETE CASCADE,
+        measure TEXT NOT NULL,
+        description TEXT,
+        time_frame TEXT,
+        UNIQUE(nct_id, measure, time_frame)
+      );
+
+      -- Secondary outcomes (many-to-many)
+      CREATE TABLE IF NOT EXISTS secondary_outcomes (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        nct_id TEXT NOT NULL REFERENCES studies(nct_id) ON DELETE CASCADE,
+        measure TEXT NOT NULL,
+        description TEXT,
+        time_frame TEXT,
+        UNIQUE(nct_id, measure, time_frame)
+      );
+
       -- Search sessions for iterative refinement
       CREATE TABLE IF NOT EXISTS search_sessions (
         session_id TEXT PRIMARY KEY,
@@ -119,12 +147,20 @@ export class DatabaseManager {
       CREATE INDEX IF NOT EXISTS idx_studies_start_date ON studies(start_date);
       CREATE INDEX IF NOT EXISTS idx_studies_study_type ON studies(study_type);
       CREATE INDEX IF NOT EXISTS idx_studies_sponsor_class ON studies(lead_sponsor_class);
+      CREATE INDEX IF NOT EXISTS idx_studies_allocation ON studies(allocation);
+      CREATE INDEX IF NOT EXISTS idx_studies_intervention_model ON studies(intervention_model);
+      CREATE INDEX IF NOT EXISTS idx_studies_primary_purpose ON studies(primary_purpose);
+      CREATE INDEX IF NOT EXISTS idx_studies_masking ON studies(masking);
+      CREATE INDEX IF NOT EXISTS idx_studies_fda_drug ON studies(is_fda_regulated_drug);
+      CREATE INDEX IF NOT EXISTS idx_studies_fda_device ON studies(is_fda_regulated_device);
       CREATE INDEX IF NOT EXISTS idx_conditions_condition ON conditions(condition);
       CREATE INDEX IF NOT EXISTS idx_interventions_type ON interventions(intervention_type);
       CREATE INDEX IF NOT EXISTS idx_interventions_name ON interventions(intervention_name);
       CREATE INDEX IF NOT EXISTS idx_locations_country ON locations(country);
       CREATE INDEX IF NOT EXISTS idx_locations_state ON locations(state);
       CREATE INDEX IF NOT EXISTS idx_locations_city ON locations(city);
+      CREATE INDEX IF NOT EXISTS idx_primary_outcomes_measure ON primary_outcomes(measure);
+      CREATE INDEX IF NOT EXISTS idx_secondary_outcomes_measure ON secondary_outcomes(measure);
 
       -- Full-text search virtual table
       CREATE VIRTUAL TABLE IF NOT EXISTS studies_fts USING fts5(
@@ -156,6 +192,83 @@ export class DatabaseManager {
         WHERE rowid = new.rowid;
       END;
     `);
+
+    // Run migration to add new columns if they don't exist
+    this.migrateSchema();
+  }
+
+  /**
+   * Migrate database schema to add new columns
+   */
+  private migrateSchema(): void {
+    // Check if new columns exist, if not add them
+    const columns = this.db.pragma('table_info(studies)') as Array<{ name: string }>;
+    const columnNames = columns.map(c => c.name);
+
+    const newColumns = [
+      { name: 'allocation', type: 'TEXT' },
+      { name: 'intervention_model', type: 'TEXT' },
+      { name: 'primary_purpose', type: 'TEXT' },
+      { name: 'masking', type: 'TEXT' },
+      { name: 'is_fda_regulated_drug', type: 'BOOLEAN' },
+      { name: 'is_fda_regulated_device', type: 'BOOLEAN' },
+      { name: 'age_groups', type: 'TEXT' },
+    ];
+
+    for (const column of newColumns) {
+      if (!columnNames.includes(column.name)) {
+        this.db.exec(`ALTER TABLE studies ADD COLUMN ${column.name} ${column.type}`);
+      }
+    }
+
+    // Backfill new columns from raw_json for existing data
+    this.backfillDenormalizedFields();
+  }
+
+  /**
+   * Backfill denormalized fields from raw_json
+   */
+  private backfillDenormalizedFields(): void {
+    const stmt = this.db.prepare('SELECT nct_id, raw_json FROM studies WHERE allocation IS NULL OR is_fda_regulated_drug IS NULL');
+    const rows = stmt.all() as Array<{ nct_id: string; raw_json: string }>;
+
+    if (rows.length === 0) return;
+
+    const updateStmt = this.db.prepare(`
+      UPDATE studies 
+      SET allocation = @allocation,
+          intervention_model = @interventionModel,
+          primary_purpose = @primaryPurpose,
+          masking = @masking,
+          is_fda_regulated_drug = @isFdaRegulatedDrug,
+          is_fda_regulated_device = @isFdaRegulatedDevice,
+          age_groups = @ageGroups
+      WHERE nct_id = @nctId
+    `);
+
+    for (const row of rows) {
+      try {
+        const study = JSON.parse(row.raw_json) as Study;
+        const protocol = study.protocolSection;
+        const design = protocol.designModule;
+        const eligibility = protocol.eligibilityModule;
+        const oversight = protocol.oversightModule;
+
+        updateStmt.run({
+          nctId: row.nct_id,
+          allocation: design?.designInfo?.allocation || null,
+          interventionModel: design?.designInfo?.interventionModel || null,
+          primaryPurpose: design?.designInfo?.primaryPurpose || null,
+          masking: design?.designInfo?.maskingInfo?.masking || null,
+          isFdaRegulatedDrug: oversight?.isFdaRegulatedDrug ? 1 : 0,
+          isFdaRegulatedDevice: oversight?.isFdaRegulatedDevice ? 1 : 0,
+          ageGroups: eligibility?.stdAges?.join(',') || null,
+        });
+      } catch (error) {
+        // Skip studies with invalid JSON
+        console.error(`Failed to backfill study ${row.nct_id}:`, error);
+      }
+    }
   }
 
   /**
@@ -172,9 +285,11 @@ export class DatabaseManager {
     const eligibility = protocol.eligibilityModule;
     const locations = protocol.contactsLocationsModule;
     const sponsor = protocol.sponsorCollaboratorsModule;
+    const oversight = protocol.oversightModule;
 
     // Prepare phase as comma-separated string
     const phase = design?.phases?.join(", ") || null;
+    const ageGroups = eligibility?.stdAges?.join(",") || null;
 
     const stmt = this.db.prepare(`
       INSERT INTO studies (
@@ -187,6 +302,8 @@ export class DatabaseManager {
         brief_summary, detailed_description,
         eligibility_criteria, sex, minimum_age, maximum_age, healthy_volunteers,
         lead_sponsor_name, lead_sponsor_class,
+        allocation, intervention_model, primary_purpose, masking,
+        is_fda_regulated_drug, is_fda_regulated_device, age_groups,
         raw_json, updated_at
       ) VALUES (
         @nctId, @briefTitle, @officialTitle, @acronym,
@@ -198,6 +315,8 @@ export class DatabaseManager {
         @briefSummary, @detailedDescription,
         @eligibilityCriteria, @sex, @minimumAge, @maximumAge, @healthyVolunteers,
         @leadSponsorName, @leadSponsorClass,
+        @allocation, @interventionModel, @primaryPurpose, @masking,
+        @isFdaRegulatedDrug, @isFdaRegulatedDevice, @ageGroups,
         @rawJson, CURRENT_TIMESTAMP
       ) ON CONFLICT(nct_id) DO UPDATE SET
         brief_title = @briefTitle,
@@ -223,6 +342,13 @@ export class DatabaseManager {
         healthy_volunteers = @healthyVolunteers,
         lead_sponsor_name = @leadSponsorName,
         lead_sponsor_class = @leadSponsorClass,
+        allocation = @allocation,
+        intervention_model = @interventionModel,
+        primary_purpose = @primaryPurpose,
+        masking = @masking,
+        is_fda_regulated_drug = @isFdaRegulatedDrug,
+        is_fda_regulated_device = @isFdaRegulatedDevice,
+        age_groups = @ageGroups,
         raw_json = @rawJson,
         updated_at = CURRENT_TIMESTAMP
     `);
@@ -252,6 +378,13 @@ export class DatabaseManager {
       healthyVolunteers: eligibility?.healthyVolunteers ? 1 : 0,
       leadSponsorName: sponsor?.leadSponsor?.name || null,
       leadSponsorClass: sponsor?.leadSponsor?.class || null,
+      allocation: design?.designInfo?.allocation || null,
+      interventionModel: design?.designInfo?.interventionModel || null,
+      primaryPurpose: design?.designInfo?.primaryPurpose || null,
+      masking: design?.designInfo?.maskingInfo?.masking || null,
+      isFdaRegulatedDrug: oversight?.isFdaRegulatedDrug ? 1 : 0,
+      isFdaRegulatedDevice: oversight?.isFdaRegulatedDevice ? 1 : 0,
+      ageGroups,
       rawJson: JSON.stringify(study),
     });
 
@@ -331,6 +464,49 @@ export class DatabaseManager {
           location.status || null,
           location.geoPoint?.lat || null,
           location.geoPoint?.lon || null,
+        );
+      }
+    }
+
+    // Insert primary outcomes
+    const outcomes = protocol.outcomesModule;
+    if (outcomes?.primaryOutcomes) {
+      const deletePrimary = this.db.prepare(
+        "DELETE FROM primary_outcomes WHERE nct_id = ?",
+      );
+      deletePrimary.run(nctId);
+
+      const insertPrimary = this.db.prepare(
+        "INSERT OR IGNORE INTO primary_outcomes (nct_id, measure, description, time_frame) VALUES (?, ?, ?, ?)",
+      );
+
+      for (const outcome of outcomes.primaryOutcomes) {
+        insertPrimary.run(
+          nctId,
+          outcome.measure,
+          outcome.description || null,
+          outcome.timeFrame || null,
+        );
+      }
+    }
+
+    // Insert secondary outcomes
+    if (outcomes?.secondaryOutcomes) {
+      const deleteSecondary = this.db.prepare(
+        "DELETE FROM secondary_outcomes WHERE nct_id = ?",
+      );
+      deleteSecondary.run(nctId);
+
+      const insertSecondary = this.db.prepare(
+        "INSERT OR IGNORE INTO secondary_outcomes (nct_id, measure, description, time_frame) VALUES (?, ?, ?, ?)",
+      );
+
+      for (const outcome of outcomes.secondaryOutcomes) {
+        insertSecondary.run(
+          nctId,
+          outcome.measure,
+          outcome.description || null,
+          outcome.timeFrame || null,
         );
       }
     }

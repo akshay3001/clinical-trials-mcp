@@ -7,7 +7,7 @@ import {
 } from "../models/types.js";
 
 const BASE_URL = "https://clinicaltrials.gov/api/v2";
-const DEFAULT_PAGE_SIZE = 100;
+const DEFAULT_PAGE_SIZE = 1000;
 const MAX_RETRIES = 3;
 const RETRY_DELAY_MS = 1000;
 
@@ -128,10 +128,22 @@ export class ClinicalTrialsAPIClient {
     const url = `${this.baseUrl}/studies?${urlParams.toString()}`;
 
     const response = await this.fetchWithRetry(url);
-    const data = await response.json();
+    const data = await response.json() as any;
 
-    // Validate response with Zod
-    return SearchResponseSchema.parse(data);
+    // Validate response with Zod using safeParse
+    const result = SearchResponseSchema.safeParse(data);
+    
+    if (!result.success) {
+      console.error('Search response validation failed:', result.error.format());
+      // Return partial data with empty studies array if validation fails completely
+      return {
+        studies: Array.isArray(data.studies) ? data.studies : [],
+        nextPageToken: data.nextPageToken,
+        totalCount: data.totalCount,
+      };
+    }
+
+    return result.data;
   }
 
   /**
@@ -151,7 +163,15 @@ export class ClinicalTrialsAPIClient {
 
     // The response wraps the study in a studies array
     if (data.studies && data.studies.length > 0) {
-      return StudySchema.parse(data.studies[0]);
+      const result = StudySchema.safeParse(data.studies[0]);
+      
+      if (!result.success) {
+        console.error(`Study ${nctId} validation failed:`, result.error.format());
+        // Return the raw study data even if validation fails
+        return data.studies[0] as Study;
+      }
+      
+      return result.data;
     }
 
     throw new Error(`Study ${nctId} not found`);

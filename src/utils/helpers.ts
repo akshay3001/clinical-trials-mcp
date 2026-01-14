@@ -9,6 +9,30 @@ export function filterStudies(
 ): Study[] {
   return studies.filter((study) => {
     const protocol = study.protocolSection;
+
+    // Phase filtering according to ClinicalTrials.gov API enum values:
+    // NA (Not Applicable), EARLY_PHASE1 (Early Phase 1), PHASE1 (Phase 1),
+    // PHASE2 (Phase 2), PHASE3 (Phase 3), PHASE4 (Phase 4)
+    if (filters && (filters as any).phase) {
+      const phaseFilter = (filters as any).phase;
+      const phases = protocol.designModule?.phases || [];
+
+      // Normalize phase filter to match API source values (case-insensitive)
+      const normalizedFilter = phaseFilter.toLowerCase();
+
+      // Check if study has the requested phase
+      const hasMatchingPhase = phases.some((p: string) => {
+        const normalizedPhase = p.toLowerCase();
+        // Handle exact match or early phase variants
+        if (normalizedFilter === 'phase 1') {
+          // Accept "Phase 1" or "Early Phase 1" for Phase 1 searches
+          return normalizedPhase === 'phase 1' || normalizedPhase === 'early phase 1';
+        }
+        return normalizedPhase === normalizedFilter;
+      });
+
+      if (!hasMatchingPhase) return false;
+    }
     const locations = protocol.contactsLocationsModule?.locations || [];
     const interventions = protocol.armsInterventionsModule?.interventions || [];
     const enrollment = protocol.designModule?.enrollmentInfo?.count;
@@ -72,7 +96,7 @@ export function filterStudies(
     if (filters.interventionType) {
       const hasType = interventions.some(
         (int) =>
-          int.type.toLowerCase() === filters.interventionType!.toLowerCase(),
+          int.type?.toLowerCase() === filters.interventionType!.toLowerCase(),
       );
       if (!hasType) return false;
     }
@@ -174,15 +198,15 @@ export function filterStudies(
 
     // Filter by FDA regulated (drug OR device)
     if (filters.fdaRegulated !== undefined) {
-      // Note: This info is typically in oversightModule which may not be in our schema
-      // We'll check if it exists in raw data, otherwise skip this filter
-      // For now, we'll use a placeholder that always passes if data not available
-      const rawStudy = study as any;
-      const oversight = rawStudy.protocolSection?.oversightModule;
+      const oversight = protocol.oversightModule;
       if (oversight) {
         const isFDARegulated =
           oversight.isFdaRegulatedDrug || oversight.isFdaRegulatedDevice;
         if (isFDARegulated !== filters.fdaRegulated) return false;
+      } else {
+        // If oversight module doesn't exist, we can't filter by this criteria
+        // Skip studies without oversight data when filter is specified
+        return false;
       }
     }
 
@@ -287,6 +311,37 @@ export function formatStudySummary(
       summary += `- **${intervention.type}:** ${intervention.name}`;
       if (intervention.description) {
         summary += `\n  ${intervention.description}`;
+      }
+      summary += "\n";
+    }
+  }
+
+  // Primary Outcomes
+  const outcomes = protocol.outcomesModule;
+  if (outcomes?.primaryOutcomes && outcomes.primaryOutcomes.length > 0) {
+    summary += `\n### Primary Outcomes\n\n`;
+    for (const outcome of outcomes.primaryOutcomes) {
+      summary += `- **${outcome.measure}**`;
+      if (outcome.timeFrame) {
+        summary += ` (${outcome.timeFrame})`;
+      }
+      if (outcome.description) {
+        summary += `\n  ${outcome.description}`;
+      }
+      summary += "\n";
+    }
+  }
+
+  // Secondary Outcomes
+  if (outcomes?.secondaryOutcomes && outcomes.secondaryOutcomes.length > 0) {
+    summary += `\n### Secondary Outcomes\n\n`;
+    for (const outcome of outcomes.secondaryOutcomes) {
+      summary += `- **${outcome.measure}**`;
+      if (outcome.timeFrame) {
+        summary += ` (${outcome.timeFrame})`;
+      }
+      if (outcome.description) {
+        summary += `\n  ${outcome.description}`;
       }
       summary += "\n";
     }
