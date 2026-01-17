@@ -302,6 +302,28 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
               type: "string",
               description: "Path to save the file",
             },
+            additionalColumns: {
+              type: "array",
+              items: {
+                type: "string",
+                enum: [
+                  "MinAge",
+                  "MaxAge",
+                  "Sex",
+                  "SponsorType",
+                  "InterventionType",
+                  "IsFDARegulatedDrug",
+                  "IsFDARegulatedDevice",
+                  "HealthyVolunteers",
+                  "AgeGroups",
+                  "PrimaryPurpose",
+                  "AllocationMethod",
+                  "InterventionModel",
+                  "StudyType",
+                ],
+              },
+              description: "Additional columns to include in CSV export (only applies to CSV format)",
+            },
           },
           required: ["sessionId", "format", "outputPath"],
         },
@@ -474,10 +496,11 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       }
 
       case "export_results": {
-        const { sessionId, format, outputPath } = args as {
+        const { sessionId, format, outputPath, additionalColumns } = args as {
           sessionId: string;
           format: ExportFormat;
           outputPath: string;
+          additionalColumns?: string[];
         };
 
         const studies = db.getSessionResults(sessionId);
@@ -497,7 +520,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         let finalPath: string;
         switch (format) {
           case "csv":
-            finalPath = await exportToCSV(studies, outputPath);
+            finalPath = await exportToCSV(studies, outputPath, additionalColumns as any);
             break;
           case "json":
             finalPath = await exportToJSON(studies, outputPath);

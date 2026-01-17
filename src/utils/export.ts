@@ -1,4 +1,4 @@
-import { Study } from "../models/types.js";
+import { Study, AdditionalExportColumn } from "../models/types.js";
 import fs from "fs";
 import path from "path";
 import Papa from "papaparse";
@@ -122,7 +122,41 @@ interface CSVRow {
   Sponsor: string;
   Summary: string;
   EligibilityCriteria: string;
+  [key: string]: string; // Allow dynamic columns
 }
+
+/**
+ * Column extractors for additional export columns
+ * Each extractor returns the value or BLANK placeholder
+ */
+const ADDITIONAL_COLUMN_EXTRACTORS: Record<AdditionalExportColumn, (study: Study) => string> = {
+  MinAge: (study) => sanitizeValue(study.protocolSection?.eligibilityModule?.minimumAge),
+  MaxAge: (study) => sanitizeValue(study.protocolSection?.eligibilityModule?.maximumAge),
+  Sex: (study) => sanitizeValue(study.protocolSection?.eligibilityModule?.sex),
+  SponsorType: (study) => sanitizeValue(study.protocolSection?.sponsorCollaboratorsModule?.leadSponsor?.class),
+  InterventionType: (study) => {
+    const interventions = study.protocolSection?.armsInterventionsModule?.interventions || [];
+    const types = interventions.map(i => i.type).filter(Boolean);
+    return sanitizeArray(types as string[]);
+  },
+  IsFDARegulatedDrug: (study) => {
+    const value = study.protocolSection?.oversightModule?.isFdaRegulatedDrug;
+    return value === true ? 'Yes' : value === false ? 'No' : BLANK_PLACEHOLDER;
+  },
+  IsFDARegulatedDevice: (study) => {
+    const value = study.protocolSection?.oversightModule?.isFdaRegulatedDevice;
+    return value === true ? 'Yes' : value === false ? 'No' : BLANK_PLACEHOLDER;
+  },
+  HealthyVolunteers: (study) => {
+    const value = study.protocolSection?.eligibilityModule?.healthyVolunteers;
+    return value === true ? 'Yes' : value === false ? 'No' : BLANK_PLACEHOLDER;
+  },
+  AgeGroups: (study) => sanitizeArray(study.protocolSection?.eligibilityModule?.stdAges, ', '),
+  PrimaryPurpose: (study) => sanitizeValue(study.protocolSection?.designModule?.designInfo?.primaryPurpose),
+  AllocationMethod: (study) => sanitizeValue(study.protocolSection?.designModule?.designInfo?.allocation),
+  InterventionModel: (study) => sanitizeValue(study.protocolSection?.designModule?.designInfo?.interventionModel),
+  StudyType: (study) => sanitizeValue(study.protocolSection?.designModule?.studyType),
+};
 
 /**
  * Export studies to CSV format
@@ -130,6 +164,7 @@ interface CSVRow {
 export async function exportToCSV(
   studies: Study[],
   outputPath: string,
+  additionalColumns?: AdditionalExportColumn[],
 ): Promise<string> {
   const finalPath = getExportPath(outputPath, "csv");
 
@@ -146,7 +181,7 @@ export async function exportToCSV(
     const locations = protocol.contactsLocationsModule;
     const sponsor = protocol.sponsorCollaboratorsModule;
 
-    return {
+    const row: CSVRow = {
       NCT_ID: id.nctId,
       Title: id.briefTitle,
       Status: status.overallStatus,
@@ -176,6 +211,15 @@ export async function exportToCSV(
       Summary: sanitizeValue(description?.briefSummary),
       EligibilityCriteria: sanitizeValue(eligibility?.eligibilityCriteria),
     };
+
+    // Add additional columns if requested
+    if (additionalColumns && additionalColumns.length > 0) {
+      for (const column of additionalColumns) {
+        row[column] = ADDITIONAL_COLUMN_EXTRACTORS[column](study);
+      }
+    }
+
+    return row;
   });
 
   const csv = Papa.unparse(rows);

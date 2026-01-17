@@ -361,6 +361,22 @@ export interface SearchSession {
 // Export formats
 export type ExportFormat = "csv" | "json" | "jsonl";
 
+// Additional CSV export columns
+export type AdditionalExportColumn = 
+  | "MinAge"
+  | "MaxAge"
+  | "Sex"
+  | "SponsorType"
+  | "InterventionType"
+  | "IsFDARegulatedDrug"
+  | "IsFDARegulatedDevice"
+  | "HealthyVolunteers"
+  | "AgeGroups"
+  | "PrimaryPurpose"
+  | "AllocationMethod"
+  | "InterventionModel"
+  | "StudyType";
+
 // Filter params for refinement
 export interface FilterParams {
   locationCountry?: string;
