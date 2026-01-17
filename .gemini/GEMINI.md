@@ -85,8 +85,21 @@ Requires a `sessionId` from a previous `search_trials` call.
 |-----------|-------------|---------|
 | `sessionId` | Session ID to export | `"session_1234567890_abc123"` |
 | `format` | Export format | `"csv"`, `"json"`, `"jsonl"` |
-| `outputPath` | File path to save | `"./exports/diabetes-trials.csv"` |
+| `outputPath` | File path to save | `"./exports/diabetes-trials.csv"` || `additionalColumns` | (CSV only) Additional columns to include beyond the default 15 | `["MinAge", "MaxAge", "Sex", "SponsorType"]` |
 
+**Available Additional Columns (CSV only):**
+- `MinAge`, `MaxAge`, `Sex` - Eligibility criteria
+- `SponsorType` - Lead sponsor classification
+- `InterventionType` - Type(s) of intervention
+- `IsFDARegulatedDrug`, `IsFDARegulatedDevice` - FDA regulation status
+- `HealthyVolunteers` - Accepts healthy volunteers
+- `AgeGroups` - Standard age groups (CHILD, ADULT, OLDER_ADULT)
+- `PrimaryPurpose` - Study's primary purpose
+- `AllocationMethod` - Randomization method
+- `InterventionModel` - Study design model
+- `StudyType` - Interventional, observational, etc.
+
+**Default CSV columns (always included):** NCT_ID, Title, Status, Phase, Enrollment, StartDate, CompletionDate, Conditions, Interventions, PrimaryOutcomes, SecondaryOutcomes, Locations, Sponsor, Summary, EligibilityCriteria
 **Returns:** Confirmation with file path and record count.
 
 ---

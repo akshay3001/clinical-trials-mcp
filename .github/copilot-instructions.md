@@ -76,9 +76,11 @@ urlParams.set('filter.overallStatus', params.status.toUpperCase());
 - **[src/db/database.ts](src/db/database.ts):** SQLite manager with FTS5, sessions, upsert logic
 - **[src/utils/cache.ts](src/utils/cache.ts):** Two-tier cache (memory + disk), JSONL raw backup
 - **[src/utils/helpers.ts](src/utils/helpers.ts):** `filterStudies()`, `formatStudySummary()`, `generateSessionId()`
-- **[src/models/types.ts](src/models/types.ts):** Zod schemas for API responses + TypeScript types
+- **[src/models/types.ts](src/models/types.ts):** Zod schemas for API responses + TypeScript types + `AdditionalExportColumn` type
+- **[src/utils/export.ts](src/utils/export.ts):** Export functions (CSV/JSON/JSONL) with `ADDITIONAL_COLUMN_EXTRACTORS` for dynamic CSV columns
 - **[src/mcp/server.ts](src/mcp/server.ts):** 5 MCP tools (search, refine, details, summarize, export)
   - `search_trials`: Default pageSize=1000, optional `fetchAll=true` for complete pagination
+  - `export_results`: CSV format supports optional `additionalColumns` parameter (13 available columns)
 
 ## Database Schema Essentials
 
@@ -107,6 +109,12 @@ urlParams.set('filter.overallStatus', params.status.toUpperCase());
 1. Create function in [export.ts](src/utils/export.ts)
 2. Add to `ExportFormat` type in [types.ts](src/models/types.ts)
 3. Add case in MCP server handler
+
+### Adding CSV Export Column
+1. Add column name to `AdditionalExportColumn` type in [types.ts](src/models/types.ts)
+2. Add extractor function to `ADDITIONAL_COLUMN_EXTRACTORS` map in [export.ts](src/utils/export.ts)
+3. Add to enum in `export_results` tool inputSchema in [server.ts](src/mcp/server.ts)
+4. Extractor must return string value or `BLANK_PLACEHOLDER` for consistency
 
 ## Error Handling Conventions
 
