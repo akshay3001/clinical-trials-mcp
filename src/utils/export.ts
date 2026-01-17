@@ -4,6 +4,69 @@ import path from "path";
 import Papa from "papaparse";
 
 const EXPORTS_DIR = "./exports";
+const BLANK_PLACEHOLDER = "BLANK";
+
+/**
+ * Replace null, undefined, or empty string with BLANK placeholder
+ */
+function sanitizeValue(value: string | null | undefined): string {
+  if (value === null || value === undefined || value === "") {
+    return BLANK_PLACEHOLDER;
+  }
+  return value;
+}
+
+/**
+ * Replace empty or undefined array with BLANK, otherwise join with separator
+ */
+function sanitizeArray(
+  arr: string[] | undefined,
+  separator: string = "; "
+): string {
+  if (!arr || arr.length === 0) {
+    return BLANK_PLACEHOLDER;
+  }
+  const joined = arr.join(separator);
+  return joined === "" ? BLANK_PLACEHOLDER : joined;
+}
+
+/**
+ * Deep sanitization: recursively replace null, undefined, and empty strings with BLANK
+ * Preserves 0, false, and other valid falsy values
+ */
+function sanitizeDeep(value: any): any {
+  // Handle null, undefined, empty string
+  if (value === null || value === undefined || value === "") {
+    return BLANK_PLACEHOLDER;
+  }
+
+  // Preserve numbers (including 0) and booleans (including false)
+  if (typeof value === "number" || typeof value === "boolean") {
+    return value;
+  }
+
+  // Handle arrays - recurse into each element
+  if (Array.isArray(value)) {
+    if (value.length === 0) {
+      return BLANK_PLACEHOLDER;
+    }
+    return value.map((item) => sanitizeDeep(item));
+  }
+
+  // Handle objects - recurse into each property
+  if (typeof value === "object") {
+    const sanitized: any = {};
+    for (const key in value) {
+      if (value.hasOwnProperty(key)) {
+        sanitized[key] = sanitizeDeep(value[key]);
+      }
+    }
+    return sanitized;
+  }
+
+  // Return other primitive types (strings) as-is
+  return value;
+}
 
 /**
  * Ensure exports directory exists and return organized path
@@ -87,31 +150,31 @@ export async function exportToCSV(
       NCT_ID: id.nctId,
       Title: id.briefTitle,
       Status: status.overallStatus,
-      Phase: design?.phases?.join(", ") || "",
-      Enrollment: design?.enrollmentInfo?.count?.toString() || "",
-      StartDate: status.startDateStruct?.date || "",
-      CompletionDate: status.completionDateStruct?.date || "",
-      Conditions: conditions?.conditions?.join("; ") || "",
-      Interventions:
-        interventions?.interventions
-          ?.map((i) => `${i.type}: ${i.name}`)
-          .join("; ") || "",
-      PrimaryOutcomes:
-        outcomes?.primaryOutcomes?.map((o) => o.measure).join("; ") || "",
-      SecondaryOutcomes:
-        outcomes?.secondaryOutcomes?.map((o) => o.measure).join("; ") || "",
-      Locations:
-        locations?.locations
-          ?.map((l) => {
-            const parts = [l.facility, l.city, l.state, l.country].filter(
-              Boolean,
-            );
-            return parts.join(", ");
-          })
-          .join("; ") || "",
-      Sponsor: sponsor?.leadSponsor?.name || "",
-      Summary: description?.briefSummary || "",
-      EligibilityCriteria: eligibility?.eligibilityCriteria || "",
+      Phase: sanitizeArray(design?.phases, ", "),
+      Enrollment: sanitizeValue(design?.enrollmentInfo?.count?.toString()),
+      StartDate: sanitizeValue(status.startDateStruct?.date),
+      CompletionDate: sanitizeValue(status.completionDateStruct?.date),
+      Conditions: sanitizeArray(conditions?.conditions),
+      Interventions: sanitizeArray(
+        interventions?.interventions?.map((i) => `${i.type}: ${i.name}`)
+      ),
+      PrimaryOutcomes: sanitizeArray(
+        outcomes?.primaryOutcomes?.map((o) => o.measure).filter((m): m is string => m !== undefined)
+      ),
+      SecondaryOutcomes: sanitizeArray(
+        outcomes?.secondaryOutcomes?.map((o) => o.measure).filter((m): m is string => m !== undefined)
+      ),
+      Locations: sanitizeArray(
+        locations?.locations?.map((l) => {
+          const parts = [l.facility, l.city, l.state, l.country].filter(
+            Boolean,
+          );
+          return parts.join(", ");
+        })
+      ),
+      Sponsor: sanitizeValue(sponsor?.leadSponsor?.name),
+      Summary: sanitizeValue(description?.briefSummary),
+      EligibilityCriteria: sanitizeValue(eligibility?.eligibilityCriteria),
     };
   });
 
@@ -128,7 +191,8 @@ export async function exportToJSON(
   outputPath: string,
 ): Promise<string> {
   const finalPath = getExportPath(outputPath, "json");
-  const json = JSON.stringify(studies, null, 2);
+  const sanitizedStudies = sanitizeDeep(studies);
+  const json = JSON.stringify(sanitizedStudies, null, 2);
   fs.writeFileSync(finalPath, json, "utf-8");
   return finalPath;
 }
@@ -141,7 +205,9 @@ export async function exportToJSONL(
   outputPath: string,
 ): Promise<string> {
   const finalPath = getExportPath(outputPath, "jsonl");
-  const lines = studies.map((study) => JSON.stringify(study)).join("\n");
+  const lines = studies
+    .map((study) => JSON.stringify(sanitizeDeep(study)))
+    .join("\n");
   fs.writeFileSync(finalPath, lines, "utf-8");
   return finalPath;
 }
