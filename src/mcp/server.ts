@@ -322,7 +322,8 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
                   "StudyType",
                 ],
               },
-              description: "Additional columns to include in CSV export (only applies to CSV format)",
+              description:
+                "Additional columns to include in CSV export (only applies to CSV format)",
             },
           },
           required: ["sessionId", "format", "outputPath"],
@@ -520,7 +521,11 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         let finalPath: string;
         switch (format) {
           case "csv":
-            finalPath = await exportToCSV(studies, outputPath, additionalColumns as any);
+            finalPath = await exportToCSV(
+              studies,
+              outputPath,
+              additionalColumns as any,
+            );
             break;
           case "json":
             finalPath = await exportToJSON(studies, outputPath);

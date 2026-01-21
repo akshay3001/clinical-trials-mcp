@@ -24,9 +24,11 @@ export function filterStudies(
       const hasMatchingPhase = phases.some((p: string) => {
         const normalizedPhase = p.toLowerCase();
         // Handle exact match or early phase variants
-        if (normalizedFilter === 'phase 1') {
+        if (normalizedFilter === "phase 1") {
           // Accept "Phase 1" or "Early Phase 1" for Phase 1 searches
-          return normalizedPhase === 'phase 1' || normalizedPhase === 'early phase 1';
+          return (
+            normalizedPhase === "phase 1" || normalizedPhase === "early phase 1"
+          );
         }
         return normalizedPhase === normalizedFilter;
       });

@@ -21,7 +21,7 @@ function sanitizeValue(value: string | null | undefined): string {
  */
 function sanitizeArray(
   arr: string[] | undefined,
-  separator: string = "; "
+  separator: string = "; ",
 ): string {
   if (!arr || arr.length === 0) {
     return BLANK_PLACEHOLDER;
@@ -129,33 +129,51 @@ interface CSVRow {
  * Column extractors for additional export columns
  * Each extractor returns the value or BLANK placeholder
  */
-const ADDITIONAL_COLUMN_EXTRACTORS: Record<AdditionalExportColumn, (study: Study) => string> = {
-  MinAge: (study) => sanitizeValue(study.protocolSection?.eligibilityModule?.minimumAge),
-  MaxAge: (study) => sanitizeValue(study.protocolSection?.eligibilityModule?.maximumAge),
+const ADDITIONAL_COLUMN_EXTRACTORS: Record<
+  AdditionalExportColumn,
+  (study: Study) => string
+> = {
+  MinAge: (study) =>
+    sanitizeValue(study.protocolSection?.eligibilityModule?.minimumAge),
+  MaxAge: (study) =>
+    sanitizeValue(study.protocolSection?.eligibilityModule?.maximumAge),
   Sex: (study) => sanitizeValue(study.protocolSection?.eligibilityModule?.sex),
-  SponsorType: (study) => sanitizeValue(study.protocolSection?.sponsorCollaboratorsModule?.leadSponsor?.class),
+  SponsorType: (study) =>
+    sanitizeValue(
+      study.protocolSection?.sponsorCollaboratorsModule?.leadSponsor?.class,
+    ),
   InterventionType: (study) => {
-    const interventions = study.protocolSection?.armsInterventionsModule?.interventions || [];
-    const types = interventions.map(i => i.type).filter(Boolean);
+    const interventions =
+      study.protocolSection?.armsInterventionsModule?.interventions || [];
+    const types = interventions.map((i) => i.type).filter(Boolean);
     return sanitizeArray(types as string[]);
   },
   IsFDARegulatedDrug: (study) => {
     const value = study.protocolSection?.oversightModule?.isFdaRegulatedDrug;
-    return value === true ? 'Yes' : value === false ? 'No' : BLANK_PLACEHOLDER;
+    return value === true ? "Yes" : value === false ? "No" : BLANK_PLACEHOLDER;
   },
   IsFDARegulatedDevice: (study) => {
     const value = study.protocolSection?.oversightModule?.isFdaRegulatedDevice;
-    return value === true ? 'Yes' : value === false ? 'No' : BLANK_PLACEHOLDER;
+    return value === true ? "Yes" : value === false ? "No" : BLANK_PLACEHOLDER;
   },
   HealthyVolunteers: (study) => {
     const value = study.protocolSection?.eligibilityModule?.healthyVolunteers;
-    return value === true ? 'Yes' : value === false ? 'No' : BLANK_PLACEHOLDER;
+    return value === true ? "Yes" : value === false ? "No" : BLANK_PLACEHOLDER;
   },
-  AgeGroups: (study) => sanitizeArray(study.protocolSection?.eligibilityModule?.stdAges, ', '),
-  PrimaryPurpose: (study) => sanitizeValue(study.protocolSection?.designModule?.designInfo?.primaryPurpose),
-  AllocationMethod: (study) => sanitizeValue(study.protocolSection?.designModule?.designInfo?.allocation),
-  InterventionModel: (study) => sanitizeValue(study.protocolSection?.designModule?.designInfo?.interventionModel),
-  StudyType: (study) => sanitizeValue(study.protocolSection?.designModule?.studyType),
+  AgeGroups: (study) =>
+    sanitizeArray(study.protocolSection?.eligibilityModule?.stdAges, ", "),
+  PrimaryPurpose: (study) =>
+    sanitizeValue(
+      study.protocolSection?.designModule?.designInfo?.primaryPurpose,
+    ),
+  AllocationMethod: (study) =>
+    sanitizeValue(study.protocolSection?.designModule?.designInfo?.allocation),
+  InterventionModel: (study) =>
+    sanitizeValue(
+      study.protocolSection?.designModule?.designInfo?.interventionModel,
+    ),
+  StudyType: (study) =>
+    sanitizeValue(study.protocolSection?.designModule?.studyType),
 };
 
 /**
@@ -191,13 +209,17 @@ export async function exportToCSV(
       CompletionDate: sanitizeValue(status.completionDateStruct?.date),
       Conditions: sanitizeArray(conditions?.conditions),
       Interventions: sanitizeArray(
-        interventions?.interventions?.map((i) => `${i.type}: ${i.name}`)
+        interventions?.interventions?.map((i) => `${i.type}: ${i.name}`),
       ),
       PrimaryOutcomes: sanitizeArray(
-        outcomes?.primaryOutcomes?.map((o) => o.measure).filter((m): m is string => m !== undefined)
+        outcomes?.primaryOutcomes
+          ?.map((o) => o.measure)
+          .filter((m): m is string => m !== undefined),
       ),
       SecondaryOutcomes: sanitizeArray(
-        outcomes?.secondaryOutcomes?.map((o) => o.measure).filter((m): m is string => m !== undefined)
+        outcomes?.secondaryOutcomes
+          ?.map((o) => o.measure)
+          .filter((m): m is string => m !== undefined),
       ),
       Locations: sanitizeArray(
         locations?.locations?.map((l) => {
@@ -205,7 +227,7 @@ export async function exportToCSV(
             Boolean,
           );
           return parts.join(", ");
-        })
+        }),
       ),
       Sponsor: sanitizeValue(sponsor?.leadSponsor?.name),
       Summary: sanitizeValue(description?.briefSummary),
