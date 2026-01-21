@@ -128,13 +128,16 @@ export class ClinicalTrialsAPIClient {
     const url = `${this.baseUrl}/studies?${urlParams.toString()}`;
 
     const response = await this.fetchWithRetry(url);
-    const data = await response.json() as any;
+    const data = (await response.json()) as any;
 
     // Validate response with Zod using safeParse
     const result = SearchResponseSchema.safeParse(data);
-    
+
     if (!result.success) {
-      console.error('Search response validation failed:', result.error.format());
+      console.error(
+        "Search response validation failed:",
+        result.error.format(),
+      );
       // Return partial data with empty studies array if validation fails completely
       return {
         studies: Array.isArray(data.studies) ? data.studies : [],
@@ -164,13 +167,16 @@ export class ClinicalTrialsAPIClient {
     // The response wraps the study in a studies array
     if (data.studies && data.studies.length > 0) {
       const result = StudySchema.safeParse(data.studies[0]);
-      
+
       if (!result.success) {
-        console.error(`Study ${nctId} validation failed:`, result.error.format());
+        console.error(
+          `Study ${nctId} validation failed:`,
+          result.error.format(),
+        );
         // Return the raw study data even if validation fails
         return data.studies[0] as Study;
       }
-      
+
       return result.data;
     }
 

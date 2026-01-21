@@ -3,12 +3,20 @@
   "version": "1.0.0",
   "description": "MCP server for searching and analyzing clinical trials from ClinicalTrials.gov",
   "type": "module",
-  "main": "dist/index.js",
+  "main": "dist/mcp/server.js",
+  "bin": {
+    "clinical-trials-mcp": "dist/mcp/server.js"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch",
     "start:mcp": "node dist/mcp/server.js",
-    "format": "prettier --write src/**/*.ts"
+    "format": "prettier --write src/**/*.ts",
+    "prepublishOnly": "npm run build"
   },
   "keywords": [
     "clinical-trials",
@@ -19,6 +27,13 @@
   ],
   "author": "",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/akshay3001/clinical-trials-mcp.git"
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.4",
     "better-sqlite3": "^11.7.0",

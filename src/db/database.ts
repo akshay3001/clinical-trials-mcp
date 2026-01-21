@@ -202,22 +202,26 @@ export class DatabaseManager {
    */
   private migrateSchema(): void {
     // Check if new columns exist, if not add them
-    const columns = this.db.pragma('table_info(studies)') as Array<{ name: string }>;
-    const columnNames = columns.map(c => c.name);
+    const columns = this.db.pragma("table_info(studies)") as Array<{
+      name: string;
+    }>;
+    const columnNames = columns.map((c) => c.name);
 
     const newColumns = [
-      { name: 'allocation', type: 'TEXT' },
-      { name: 'intervention_model', type: 'TEXT' },
-      { name: 'primary_purpose', type: 'TEXT' },
-      { name: 'masking', type: 'TEXT' },
-      { name: 'is_fda_regulated_drug', type: 'BOOLEAN' },
-      { name: 'is_fda_regulated_device', type: 'BOOLEAN' },
-      { name: 'age_groups', type: 'TEXT' },
+      { name: "allocation", type: "TEXT" },
+      { name: "intervention_model", type: "TEXT" },
+      { name: "primary_purpose", type: "TEXT" },
+      { name: "masking", type: "TEXT" },
+      { name: "is_fda_regulated_drug", type: "BOOLEAN" },
+      { name: "is_fda_regulated_device", type: "BOOLEAN" },
+      { name: "age_groups", type: "TEXT" },
     ];
 
     for (const column of newColumns) {
       if (!columnNames.includes(column.name)) {
-        this.db.exec(`ALTER TABLE studies ADD COLUMN ${column.name} ${column.type}`);
+        this.db.exec(
+          `ALTER TABLE studies ADD COLUMN ${column.name} ${column.type}`,
+        );
       }
     }
 
@@ -229,7 +233,9 @@ export class DatabaseManager {
    * Backfill denormalized fields from raw_json
    */
   private backfillDenormalizedFields(): void {
-    const stmt = this.db.prepare('SELECT nct_id, raw_json FROM studies WHERE allocation IS NULL OR is_fda_regulated_drug IS NULL');
+    const stmt = this.db.prepare(
+      "SELECT nct_id, raw_json FROM studies WHERE allocation IS NULL OR is_fda_regulated_drug IS NULL",
+    );
     const rows = stmt.all() as Array<{ nct_id: string; raw_json: string }>;
 
     if (rows.length === 0) return;
@@ -262,7 +268,7 @@ export class DatabaseManager {
           masking: design?.designInfo?.maskingInfo?.masking || null,
           isFdaRegulatedDrug: oversight?.isFdaRegulatedDrug ? 1 : 0,
           isFdaRegulatedDevice: oversight?.isFdaRegulatedDevice ? 1 : 0,
-          ageGroups: eligibility?.stdAges?.join(',') || null,
+          ageGroups: eligibility?.stdAges?.join(",") || null,
         });
       } catch (error) {
         // Skip studies with invalid JSON
