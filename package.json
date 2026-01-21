@@ -1,6 +1,6 @@
 {
   "name": "@akshay89/clinical-trials-mcp",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "MCP server for searching and analyzing clinical trials from ClinicalTrials.gov",
   "type": "module",
   "main": "dist/mcp/server.js",
