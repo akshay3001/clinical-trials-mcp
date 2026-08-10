@@ -24,17 +24,30 @@ MCP tool call -> API/cache -> SQLite upsert -> search session -> local refinemen
 - Run the compiled stdio server with `npm run start:mcp`.
 - Use `npm run dev` for TypeScript watch mode.
 - Format source files with `npm run format`.
-- Check formatting without changing files with `npx prettier --check "src/**/*.ts"`.
-- There is currently no automated test suite or lint script. `prompts.md` contains manual MCP scenarios; use relevant scenarios when behavior changes.
+- Check formatting without changing files with `npm run format:check`.
+- Run the automated test suite with `npm test` and type-check test/harness code
+  with `npm run typecheck:test`.
+- Run the deterministic stdio regression harness with `npm run regression`
+  whenever core API, cache, database, refinement, export, or MCP behavior
+  changes. Use `npm run regression:keep` to retain a successful runtime for
+  inspection. `npm run regression:live` is an explicit, network-dependent smoke
+  test and is not required for deterministic verification.
+- `prompts.md` contains additional manual MCP scenarios; use relevant scenarios
+  when behavior changes beyond the automated coverage.
 
 Before finishing a code change, run at minimum:
 
 ```bash
 npm run build
-npx prettier --check "src/**/*.ts"
+npm run typecheck:test
+npm run format:check
+npm test
 ```
 
-If MCP behavior changed, also launch the compiled server or exercise the relevant scenario from `prompts.md`. State clearly when network-dependent behavior was not exercised.
+If core logic or MCP behavior changed, also run `npm run regression`. Exercise
+the relevant scenario from `prompts.md` when it is not represented in the
+automated suite. State clearly when the optional network-dependent smoke test
+was not exercised.
 
 ## Repository map
 
@@ -45,9 +58,11 @@ If MCP behavior changed, also launch the compiled server or exercise the relevan
 - `src/utils/cache.ts`: one-minute memory cache, 24-hour disk cache, and raw JSONL response log.
 - `src/utils/helpers.ts`: in-memory refinement filters and Markdown result formatting.
 - `src/utils/export.ts`: CSV, JSON, and JSONL serialization and output-path handling.
+- `test/`: deterministic unit and MCP protocol tests.
+- `tools/regression/`: committed, deterministic end-to-end stdio harness and fixtures.
 - `prompts.md`: manual end-to-end MCP scenarios and expected flows.
 - `README.md`: concise user-facing installation and feature overview.
-- `dist/`, `data/`, `cache/`, and `exports/`: generated runtime artifacts; they are ignored and must not be committed.
+- `dist/`, `data/`, `cache/`, `exports/`, and `.tmp/regression/`: generated runtime artifacts; they are ignored and must not be committed.
 
 ## Architecture invariants
 
@@ -80,6 +95,7 @@ If MCP behavior changed, also launch the compiled server or exercise the relevan
 - Importing the database and cache modules creates their runtime directories, and database initialization runs schema migration/backfill logic. Avoid importing these modules in tooling that is expected to be side-effect free.
 - SQLite is the durable local store. `studies.raw_json` preserves the full upstream study while selected fields and related tables support filtering and export.
 - Study writes use an upsert keyed by `nct_id`. When adding a persisted field, update table creation, migration/backfill, the upsert insert and conflict-update clauses, parameter extraction, indexes if appropriate, and any related filters/types.
+- `schema_migrations` records one-time data migrations: use its markers instead of repeating startup backfills; FTS trigger migrations may rebuild the external-content index only when trigger definitions change.
 - Sessions store NCT IDs, not duplicate study payloads. Refinement must not make another upstream API request.
 - Preserve SQLite WAL mode, foreign-key enforcement, cascading relationships, and FTS synchronization.
 
@@ -119,4 +135,5 @@ Update the Zod schema first, keep optional upstream modules optional, and verify
 - Do not commit generated databases, cache contents, exports, compiled output, logs, or dependency directories.
 - Do not delete `data/` as a routine debugging step; it may contain a developer's local study cache and sessions. If a destructive reset is genuinely needed, ask first.
 - Treat exported study data as potentially sensitive user output even though the upstream registry is public: avoid printing large payloads or contact details in diagnostics.
+- Keep regression fixtures synthetic and free of participant or contact data.
 - Update this file when a change introduces a durable command, invariant, or cross-cutting workflow. Avoid turning it into a feature catalog or copying the MCP tool reference here.

@@ -1,0 +1,207 @@
+[
+  {
+    "protocolSection": {
+      "identificationModule": {
+        "nctId": "NCT00000001",
+        "briefTitle": "Double-blind diabetes treatment study",
+        "officialTitle": "A Randomized Double-blind Diabetes Treatment Study"
+      },
+      "statusModule": {
+        "overallStatus": "RECRUITING",
+        "startDateStruct": { "date": "2025-01-15", "type": "ACTUAL" },
+        "completionDateStruct": {
+          "date": "2027-06-30",
+          "type": "ESTIMATED"
+        }
+      },
+      "descriptionModule": {
+        "briefSummary": "Evaluates a biomarker-guided diabetes treatment.",
+        "detailedDescription": "Deterministic regression fixture one."
+      },
+      "conditionsModule": {
+        "conditions": ["Diabetes Mellitus"],
+        "keywords": ["biomarker", "glucose"]
+      },
+      "designModule": {
+        "studyType": "INTERVENTIONAL",
+        "phases": ["PHASE3"],
+        "designInfo": {
+          "allocation": "RANDOMIZED",
+          "interventionModel": "PARALLEL",
+          "primaryPurpose": "TREATMENT",
+          "maskingInfo": { "masking": "DOUBLE" }
+        },
+        "enrollmentInfo": { "count": 120, "type": "ESTIMATED" }
+      },
+      "armsInterventionsModule": {
+        "interventions": [
+          {
+            "type": "DRUG",
+            "name": "Fixture Drug A",
+            "description": "A deterministic test intervention."
+          }
+        ]
+      },
+      "outcomesModule": {
+        "primaryOutcomes": [
+          { "measure": "HbA1c change", "timeFrame": "24 weeks" }
+        ]
+      },
+      "eligibilityModule": {
+        "eligibilityCriteria": "Adults with type 2 diabetes.",
+        "healthyVolunteers": false,
+        "sex": "ALL",
+        "minimumAge": "18 Years",
+        "maximumAge": "75 Years",
+        "stdAges": ["ADULT", "OLDER_ADULT"]
+      },
+      "contactsLocationsModule": {
+        "locations": [
+          {
+            "facility": "Fixture Medical Center",
+            "city": "Amsterdam",
+            "state": "North Holland",
+            "country": "Netherlands",
+            "status": "RECRUITING"
+          }
+        ]
+      },
+      "sponsorCollaboratorsModule": {
+        "leadSponsor": { "name": "Fixture Pharma", "class": "INDUSTRY" }
+      },
+      "oversightModule": {
+        "isFdaRegulatedDrug": true,
+        "isFdaRegulatedDevice": false
+      }
+    },
+    "hasResults": true
+  },
+  {
+    "protocolSection": {
+      "identificationModule": {
+        "nctId": "NCT00000002",
+        "briefTitle": "Observational diabetes registry"
+      },
+      "statusModule": {
+        "overallStatus": "COMPLETED",
+        "startDateStruct": { "date": "2022-02-01", "type": "ACTUAL" },
+        "completionDateStruct": { "date": "2024-02-01", "type": "ACTUAL" }
+      },
+      "descriptionModule": {
+        "briefSummary": "A pediatric and adult diabetes registry."
+      },
+      "conditionsModule": {
+        "conditions": ["Diabetes Mellitus"],
+        "keywords": ["registry", "natural history"]
+      },
+      "designModule": {
+        "studyType": "OBSERVATIONAL",
+        "designInfo": {
+          "allocation": "N_A",
+          "interventionModel": "SINGLE_GROUP",
+          "primaryPurpose": "OTHER",
+          "maskingInfo": { "masking": "NONE" }
+        },
+        "enrollmentInfo": { "count": 40, "type": "ACTUAL" }
+      },
+      "eligibilityModule": {
+        "healthyVolunteers": true,
+        "sex": "ALL",
+        "minimumAge": "8 Years",
+        "maximumAge": "65 Years",
+        "stdAges": ["CHILD", "ADULT"]
+      },
+      "contactsLocationsModule": {
+        "locations": [
+          {
+            "facility": "Fixture Children's Hospital",
+            "city": "San Diego",
+            "state": "California",
+            "country": "United States"
+          }
+        ]
+      },
+      "sponsorCollaboratorsModule": {
+        "leadSponsor": { "name": "Fixture Institute", "class": "NIH" }
+      },
+      "oversightModule": {
+        "isFdaRegulatedDrug": false,
+        "isFdaRegulatedDevice": false
+      }
+    },
+    "hasResults": false
+  },
+  {
+    "protocolSection": {
+      "identificationModule": {
+        "nctId": "NCT00000003",
+        "briefTitle": "Open-label diabetes device study"
+      },
+      "statusModule": {
+        "overallStatus": "RECRUITING",
+        "startDateStruct": { "date": "2026-03-01", "type": "ESTIMATED" }
+      },
+      "descriptionModule": {
+        "briefSummary": "Evaluates a glucose monitoring device."
+      },
+      "conditionsModule": {
+        "conditions": ["Diabetes Mellitus"],
+        "keywords": ["device", "monitoring"]
+      },
+      "designModule": {
+        "studyType": "INTERVENTIONAL",
+        "phases": ["NA"],
+        "designInfo": {
+          "allocation": "NON_RANDOMIZED",
+          "interventionModel": "SINGLE_GROUP",
+          "primaryPurpose": "DEVICE_FEASIBILITY",
+          "maskingInfo": { "masking": "NONE" }
+        },
+        "enrollmentInfo": { "count": 75, "type": "ESTIMATED" }
+      },
+      "armsInterventionsModule": {
+        "interventions": [{ "type": "DEVICE", "name": "Fixture Monitor" }]
+      },
+      "eligibilityModule": {
+        "healthyVolunteers": false,
+        "sex": "FEMALE",
+        "minimumAge": "21 Years",
+        "maximumAge": "70 Years",
+        "stdAges": ["ADULT", "OLDER_ADULT"]
+      },
+      "contactsLocationsModule": {
+        "locations": [
+          {
+            "facility": "Fixture Research Clinic",
+            "city": "Boston",
+            "state": "Massachusetts",
+            "country": "United States",
+            "status": "RECRUITING"
+          }
+        ]
+      },
+      "sponsorCollaboratorsModule": {
+        "leadSponsor": { "name": "Fixture Devices", "class": "INDUSTRY" }
+      },
+      "oversightModule": {
+        "isFdaRegulatedDrug": false,
+        "isFdaRegulatedDevice": true
+      }
+    },
+    "hasResults": false
+  },
+  {
+    "protocolSection": {
+      "identificationModule": {
+        "nctId": "NCT00000004",
+        "briefTitle": "Detail-only regression study"
+      },
+      "statusModule": { "overallStatus": "ACTIVE_NOT_RECRUITING" },
+      "descriptionModule": {
+        "briefSummary": "Returned only by the single-study endpoint."
+      }
+    },
+    "hasResults": false,
+    "regressionDetailOnly": true
+  }
+]

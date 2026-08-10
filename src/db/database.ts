@@ -6,6 +6,30 @@ import fs from "fs";
 const DEFAULT_DB_PATH = "./data/clinical-trials.db";
 export const DEFAULT_SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
+const FTS_TRIGGER_NAMES = ["studies_ai", "studies_ad", "studies_au"] as const;
+const DENORMALIZED_BACKFILL_MIGRATION = "denormalized-fields-v1";
+const FTS_TRIGGER_DEFINITIONS = {
+  studies_ai: `CREATE TRIGGER studies_ai AFTER INSERT ON studies BEGIN
+    INSERT INTO studies_fts(rowid, nct_id, brief_title, official_title, brief_summary, detailed_description)
+    VALUES (new.rowid, new.nct_id, new.brief_title, new.official_title, new.brief_summary, new.detailed_description);
+  END`,
+
+  studies_ad: `CREATE TRIGGER studies_ad AFTER DELETE ON studies BEGIN
+    INSERT INTO studies_fts(studies_fts, rowid, nct_id, brief_title, official_title, brief_summary, detailed_description)
+    VALUES ('delete', old.rowid, old.nct_id, old.brief_title, old.official_title, old.brief_summary, old.detailed_description);
+  END`,
+
+  studies_au: `CREATE TRIGGER studies_au AFTER UPDATE ON studies BEGIN
+    INSERT INTO studies_fts(studies_fts, rowid, nct_id, brief_title, official_title, brief_summary, detailed_description)
+    VALUES ('delete', old.rowid, old.nct_id, old.brief_title, old.official_title, old.brief_summary, old.detailed_description);
+    INSERT INTO studies_fts(rowid, nct_id, brief_title, official_title, brief_summary, detailed_description)
+    VALUES (new.rowid, new.nct_id, new.brief_title, new.official_title, new.brief_summary, new.detailed_description);
+  END`,
+} as const;
+const FTS_TRIGGER_SQL = Object.values(FTS_TRIGGER_DEFINITIONS)
+  .map((definition) => `${definition};`)
+  .join("\n");
+
 export interface SearchSessionMetadata {
   sessionId: string;
   searchParams: unknown;
@@ -162,6 +186,12 @@ export class DatabaseManager {
         PRIMARY KEY (session_id, nct_id)
       );
 
+      -- Durable markers for data migrations that should not repeat on startup
+      CREATE TABLE IF NOT EXISTS schema_migrations (
+        name TEXT PRIMARY KEY,
+        applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+
       -- Indexes for common queries
       CREATE INDEX IF NOT EXISTS idx_studies_status ON studies(overall_status);
       CREATE INDEX IF NOT EXISTS idx_studies_phase ON studies(phase);
@@ -194,29 +224,68 @@ export class DatabaseManager {
         content_rowid=rowid
       );
 
-      -- Triggers to keep FTS in sync
-      CREATE TRIGGER IF NOT EXISTS studies_ai AFTER INSERT ON studies BEGIN
-        INSERT INTO studies_fts(rowid, nct_id, brief_title, official_title, brief_summary, detailed_description)
-        VALUES (new.rowid, new.nct_id, new.brief_title, new.official_title, new.brief_summary, new.detailed_description);
-      END;
-
-      CREATE TRIGGER IF NOT EXISTS studies_ad AFTER DELETE ON studies BEGIN
-        DELETE FROM studies_fts WHERE rowid = old.rowid;
-      END;
-
-      CREATE TRIGGER IF NOT EXISTS studies_au AFTER UPDATE ON studies BEGIN
-        UPDATE studies_fts 
-        SET brief_title = new.brief_title,
-            official_title = new.official_title,
-            brief_summary = new.brief_summary,
-            detailed_description = new.detailed_description
-        WHERE rowid = new.rowid;
-      END;
     `);
 
+    // Repair FTS before migrations can update legacy study rows.
+    this.ensureFtsTriggers();
     // Run migration to add new columns if they don't exist
     this.migrateSchema();
     this.cleanupExpiredSessions();
+  }
+
+  /**
+   * Repair the FTS triggers and index only when opening a database created by
+   * an older release (or one missing a trigger). Normal startups only inspect
+   * the trigger definitions and leave the index untouched.
+   */
+  private ensureFtsTriggers(): void {
+    const rows = this.db
+      .prepare(
+        `SELECT name, sql FROM sqlite_master
+         WHERE type = 'trigger' AND name IN (${FTS_TRIGGER_NAMES.map(() => "?").join(", ")})`,
+      )
+      .all(...FTS_TRIGGER_NAMES) as Array<{ name: string; sql: string }>;
+    const definitions = new Map(rows.map((row) => [row.name, row.sql]));
+
+    if (this.hasCurrentFtsTriggers(definitions)) {
+      return;
+    }
+
+    const hasStudies =
+      (
+        this.db.prepare("SELECT COUNT(*) AS count FROM studies").get() as {
+          count: number;
+        }
+      ).count > 0;
+    this.db.transaction(() => {
+      this.db.exec(`
+        DROP TRIGGER IF EXISTS studies_ai;
+        DROP TRIGGER IF EXISTS studies_ad;
+        DROP TRIGGER IF EXISTS studies_au;
+        ${FTS_TRIGGER_SQL}
+      `);
+      if (hasStudies) {
+        this.db
+          .prepare("INSERT INTO studies_fts(studies_fts) VALUES ('rebuild')")
+          .run();
+      }
+    })();
+  }
+
+  private hasCurrentFtsTriggers(definitions: Map<string, string>): boolean {
+    return FTS_TRIGGER_NAMES.every(
+      (name) =>
+        this.canonicalizeSql(definitions.get(name)) ===
+        this.canonicalizeSql(FTS_TRIGGER_DEFINITIONS[name]),
+    );
+  }
+
+  private canonicalizeSql(sql: string | undefined): string {
+    return (sql ?? "")
+      .trim()
+      .replace(/;\s*$/, "")
+      .replace(/\s+/g, " ")
+      .toUpperCase();
   }
 
   /**
@@ -239,16 +308,25 @@ export class DatabaseManager {
       { name: "age_groups", type: "TEXT" },
     ];
 
+    let addedStudyColumn = false;
     for (const column of newColumns) {
       if (!columnNames.includes(column.name)) {
         this.db.exec(
           `ALTER TABLE studies ADD COLUMN ${column.name} ${column.type}`,
         );
+        addedStudyColumn = true;
       }
     }
 
-    // Backfill new columns from raw_json for existing data
-    this.backfillDenormalizedFields();
+    // Older databases receive this migration once. A durable marker prevents
+    // legitimately-null optional fields from causing repeated startup writes.
+    if (
+      addedStudyColumn ||
+      !this.hasCompletedMigration(DENORMALIZED_BACKFILL_MIGRATION)
+    ) {
+      this.backfillDenormalizedFields();
+      this.recordMigration(DENORMALIZED_BACKFILL_MIGRATION);
+    }
 
     const sessionColumns = this.db.pragma(
       "table_info(search_sessions)",
@@ -319,10 +397,32 @@ export class DatabaseManager {
     }
   }
 
+  private hasCompletedMigration(name: string): boolean {
+    return (
+      this.db
+        .prepare("SELECT 1 FROM schema_migrations WHERE name = ?")
+        .get(name) !== undefined
+    );
+  }
+
+  private recordMigration(name: string): void {
+    this.db
+      .prepare("INSERT OR IGNORE INTO schema_migrations (name) VALUES (?)")
+      .run(name);
+  }
+
   /**
    * Insert or update a study
    */
   upsertStudy(study: Study): void {
+    this.db.transaction(() => this.upsertStudyAtomically(study))();
+  }
+
+  /**
+   * Keep the core record and its normalized relations in one transaction so a
+   * malformed optional relation cannot leave a partially refreshed study.
+   */
+  private upsertStudyAtomically(study: Study): void {
     const protocol = study.protocolSection;
     const identification = protocol.identificationModule;
     const status = protocol.statusModule;

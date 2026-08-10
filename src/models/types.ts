@@ -468,6 +468,7 @@ export type AdditionalExportColumn =
 
 // Filter params for refinement
 export interface FilterParams {
+  phase?: string;
   locationCountry?: string;
   locationState?: string;
   locationCity?: string;
