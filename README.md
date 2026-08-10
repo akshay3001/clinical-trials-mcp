@@ -1,9 +1,9 @@
 # Clinical Trials MCP Server
 
-Search, inspect, refine, summarize, and export clinical trial data from
-ClinicalTrials.gov through an MCP server.
+Search and analyze clinical trial data from ClinicalTrials.gov through an MCP
+server.
 
-The stdio server supports both MCP `2026-07-28` and legacy 2025-era clients.
+The stdio server supports MCP `2026-07-28` and legacy clients.
 
 ## Prerequisites
 
@@ -38,7 +38,7 @@ Add to your `mcp.json`:
 
 - 🔍 **Advanced Search**: Search by condition, intervention, sponsor, location, phase, status, or general terms
 - 🎯 **Iterative Refinement**: Filter results without re-querying the API
-- 🤖 **AI Integration**: Connect compatible AI assistants through an MCP client
+- 🤖 **MCP Integration**: Connect AI assistants through MCP
 - 💾 **Smart Caching**: In-memory and disk caching to minimize API calls
 - 📊 **Flexible Export**: CSV, JSON, JSONL formats
 - 🗄️ **Local Database**: SQLite storage with full-text search
