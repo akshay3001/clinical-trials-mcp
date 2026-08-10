@@ -213,12 +213,9 @@ export class ClinicalTrialsAPIClient {
         "Search response validation failed:",
         result.error.format(),
       );
-      // Return partial data with empty studies array if validation fails completely
-      return {
-        studies: Array.isArray(data.studies) ? data.studies : [],
-        nextPageToken: data.nextPageToken,
-        totalCount: data.totalCount,
-      };
+      throw new Error(
+        "ClinicalTrials.gov search response failed schema validation",
+      );
     }
 
     return result.data;
@@ -261,8 +258,9 @@ export class ClinicalTrialsAPIClient {
           `Study ${nctId} validation failed:`,
           result.error.format(),
         );
-        // Return the raw study data even if validation fails
-        return rawStudy as Study;
+        throw new Error(
+          "ClinicalTrials.gov study response failed schema validation",
+        );
       }
 
       return result.data;
