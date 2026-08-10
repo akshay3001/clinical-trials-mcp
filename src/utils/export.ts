@@ -3,7 +3,10 @@ import fs from "fs";
 import path from "path";
 import Papa from "papaparse";
 
-const EXPORTS_DIR = "./exports";
+const EXPORTS_ROOT_ENV = "CLINICAL_TRIALS_EXPORTS_DIR";
+const DEFAULT_EXPORTS_DIR = "exports";
+const ALLOWED_EXPORT_FORMATS = new Set(["csv", "json", "jsonl"]);
+const CSV_FORMULA_PATTERN = /^[\s\uFEFF]*(?:[=+\-@]|[\t\r\n])/;
 const BLANK_PLACEHOLDER = "BLANK";
 
 /**
@@ -34,7 +37,7 @@ function sanitizeArray(
  * Deep sanitization: recursively replace null, undefined, and empty strings with BLANK
  * Preserves 0, false, and other valid falsy values
  */
-function sanitizeDeep(value: any): any {
+function sanitizeDeep(value: unknown): unknown {
   // Handle null, undefined, empty string
   if (value === null || value === undefined || value === "") {
     return BLANK_PLACEHOLDER;
@@ -55,11 +58,9 @@ function sanitizeDeep(value: any): any {
 
   // Handle objects - recurse into each property
   if (typeof value === "object") {
-    const sanitized: any = {};
-    for (const key in value) {
-      if (value.hasOwnProperty(key)) {
-        sanitized[key] = sanitizeDeep(value[key]);
-      }
+    const sanitized: Record<string, unknown> = {};
+    for (const [key, nestedValue] of Object.entries(value)) {
+      sanitized[key] = sanitizeDeep(nestedValue);
     }
     return sanitized;
   }
@@ -69,41 +70,156 @@ function sanitizeDeep(value: any): any {
 }
 
 /**
- * Ensure exports directory exists and return organized path
+ * Return true when candidate is the root itself or one of its descendants.
  */
-function ensureExportsDir(format: string, filename: string): string {
-  // Create main exports directory
-  if (!fs.existsSync(EXPORTS_DIR)) {
-    fs.mkdirSync(EXPORTS_DIR, { recursive: true });
-  }
-
-  // Create format subdirectory
-  const formatDir = path.join(EXPORTS_DIR, format);
-  if (!fs.existsSync(formatDir)) {
-    fs.mkdirSync(formatDir, { recursive: true });
-  }
-
-  // Return full path
-  return path.join(formatDir, filename);
+function isWithinRoot(root: string, candidate: string): boolean {
+  const relative = path.relative(root, candidate);
+  return (
+    relative === "" ||
+    (!relative.startsWith(`..${path.sep}`) &&
+      relative !== ".." &&
+      !path.isAbsolute(relative))
+  );
 }
 
 /**
- * Get organized export path from user input
+ * Create the configured export root and resolve it to its canonical location.
+ * Resolving the root itself permits an intentionally configured symlink while
+ * preventing paths below it from escaping through another symlink.
  */
-export function getExportPath(outputPath: string, format: string): string {
-  const filename = path.basename(outputPath);
+function getExportsRoot(): string {
+  const configuredRoot = process.env[EXPORTS_ROOT_ENV]?.trim();
+  const root = path.resolve(configuredRoot || DEFAULT_EXPORTS_DIR);
 
-  // If user provided an absolute path or a path with directories, use it as-is
-  if (path.isAbsolute(outputPath) || outputPath.includes(path.sep)) {
-    const dir = path.dirname(outputPath);
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true });
-    }
-    return outputPath;
+  fs.mkdirSync(root, { recursive: true });
+  const rootStats = fs.statSync(root);
+  if (!rootStats.isDirectory()) {
+    throw new Error(`Configured export root is not a directory: ${root}`);
   }
 
-  // Otherwise, organize in exports folder
-  return ensureExportsDir(format, filename);
+  return fs.realpathSync(root);
+}
+
+/**
+ * Create each missing directory without following symlinks below the export
+ * root. Creating one component at a time avoids recursive mkdir traversing an
+ * existing symlink before it can be checked.
+ */
+function ensureSafeDirectory(root: string, directory: string): void {
+  if (!isWithinRoot(root, directory)) {
+    throw new Error(`Export path must remain within the export root: ${root}`);
+  }
+
+  const relative = path.relative(root, directory);
+  if (relative === "") {
+    return;
+  }
+
+  let current = root;
+  for (const segment of relative.split(path.sep)) {
+    current = path.join(current, segment);
+
+    try {
+      const stats = fs.lstatSync(current);
+      if (stats.isSymbolicLink()) {
+        throw new Error(
+          `Export path cannot contain symbolic links: ${current}`,
+        );
+      }
+      if (!stats.isDirectory()) {
+        throw new Error(`Export path component is not a directory: ${current}`);
+      }
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+        throw error;
+      }
+      fs.mkdirSync(current);
+    }
+  }
+
+  if (fs.realpathSync(directory) !== directory) {
+    throw new Error(
+      `Export path cannot escape through symbolic links: ${directory}`,
+    );
+  }
+}
+
+/**
+ * Reject an existing destination instead of silently replacing it. The write
+ * itself also uses the exclusive "wx" flag to make the policy race-safe.
+ */
+function assertNewDestination(destination: string): void {
+  try {
+    fs.lstatSync(destination);
+    throw new Error(
+      `Refusing to overwrite existing export file: ${destination}`,
+    );
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+      throw error;
+    }
+  }
+}
+
+function writeExportFile(destination: string, contents: string): void {
+  const root = getExportsRoot();
+  if (!isWithinRoot(root, destination)) {
+    throw new Error(`Export path must remain within the export root: ${root}`);
+  }
+
+  ensureSafeDirectory(root, path.dirname(destination));
+  assertNewDestination(destination);
+
+  try {
+    fs.writeFileSync(destination, contents, {
+      encoding: "utf-8",
+      flag: "wx",
+      mode: 0o600,
+    });
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "EEXIST") {
+      throw new Error(
+        `Refusing to overwrite existing export file: ${destination}`,
+      );
+    }
+    throw error;
+  }
+}
+
+/**
+ * Get a contained export path from user input. Bare filenames retain the
+ * existing organization by format (for example exports/csv/results.csv).
+ * Explicit relative paths are resolved below the configured export root, while
+ * absolute paths are accepted only when already below that root.
+ */
+export function getExportPath(outputPath: string, format: string): string {
+  if (!ALLOWED_EXPORT_FORMATS.has(format)) {
+    throw new Error(`Unsupported export format: ${format}`);
+  }
+
+  if (outputPath.trim() === "" || outputPath.includes("\0")) {
+    throw new Error("Export output path must be a non-empty valid path");
+  }
+
+  const root = getExportsRoot();
+  const isBareFilename = path.basename(outputPath) === outputPath;
+  let destination: string;
+
+  if (isBareFilename) {
+    destination = path.resolve(root, format, outputPath);
+  } else if (path.isAbsolute(outputPath)) {
+    destination = path.resolve(outputPath);
+  } else {
+    destination = path.resolve(root, outputPath);
+  }
+
+  if (!isWithinRoot(root, destination) || destination === root) {
+    throw new Error(`Export path must remain within the export root: ${root}`);
+  }
+
+  ensureSafeDirectory(root, path.dirname(destination));
+  assertNewDestination(destination);
+  return destination;
 }
 
 interface CSVRow {
@@ -244,8 +360,8 @@ export async function exportToCSV(
     return row;
   });
 
-  const csv = Papa.unparse(rows);
-  fs.writeFileSync(finalPath, csv, "utf-8");
+  const csv = Papa.unparse(rows, { escapeFormulae: CSV_FORMULA_PATTERN });
+  writeExportFile(finalPath, csv);
   return finalPath;
 }
 
@@ -259,7 +375,7 @@ export async function exportToJSON(
   const finalPath = getExportPath(outputPath, "json");
   const sanitizedStudies = sanitizeDeep(studies);
   const json = JSON.stringify(sanitizedStudies, null, 2);
-  fs.writeFileSync(finalPath, json, "utf-8");
+  writeExportFile(finalPath, json);
   return finalPath;
 }
 
@@ -274,6 +390,6 @@ export async function exportToJSONL(
   const lines = studies
     .map((study) => JSON.stringify(sanitizeDeep(study)))
     .join("\n");
-  fs.writeFileSync(finalPath, lines, "utf-8");
+  writeExportFile(finalPath, lines);
   return finalPath;
 }

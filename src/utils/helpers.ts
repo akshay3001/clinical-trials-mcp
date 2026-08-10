@@ -1,4 +1,5 @@
 import { Study, FilterParams } from "../models/types.js";
+import { randomUUID } from "node:crypto";
 
 /**
  * Filter studies based on refinement criteria
@@ -229,7 +230,7 @@ export function filterStudies(
  * Generate a session ID
  */
 export function generateSessionId(): string {
-  return `session_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+  return randomUUID();
 }
 
 /**

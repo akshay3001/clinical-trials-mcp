@@ -229,7 +229,7 @@ Filtered to 15 studies (from 143)
    Enrollment: 250 participants
    ...
 
-**Session ID:** session_1234567890_abc123
+**Session ID:** 550e8400-e29b-41d4-a716-446655440000
 ```
 
 **No Results After Filter:**
@@ -241,7 +241,7 @@ No studies match the specified criteria. Try relaxing some filters.
 
 **Error Handling:**
 ```
-Error: Session session_invalid_123 not found or has no results.
+Error: Session session_invalid_123 was not found.
 ```
 
 ---
