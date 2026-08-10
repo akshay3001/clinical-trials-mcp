@@ -44,8 +44,17 @@ Add to your `mcp.json`:
 The tool creates sessions that allow you to refine searches without hitting the API again:
 
 1. Initial search hits API and stores results
-2. Filter operations work on cached results
-3. Session persists in the local database with a sliding seven-day lifetime
+2. Search and filter operations return compact counts plus a session ID
+3. Filter operations work on cached results
+4. Call `summarize_session` for study summaries, or `export_results` for the complete result set
+5. Session persists in the local database with a sliding seven-day lifetime
+
+`search_trials` and `refine_results` do not include a study list in their responses. For example:
+
+```text
+Filtered from 1,000 to 174 studies.
+**Session ID:** 550e8400-e29b-41d4-a716-446655440000
+```
 
 ### Smart Caching
 

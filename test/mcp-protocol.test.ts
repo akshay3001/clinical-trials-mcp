@@ -154,7 +154,12 @@ test("serves MCP 2026-07-28 over stdio with deterministic tools", async () => {
       arguments: { sessionId },
     });
     assert.notEqual(refined.isError, true);
-    assert.match(JSON.stringify(refined.content), /Filtered to 1 studies/);
+    assert.match(JSON.stringify(refined.content), /Filtered from 1 to 1 study/);
+    assert.match(JSON.stringify(refined.content), new RegExp(sessionId));
+    assert.doesNotMatch(
+      JSON.stringify(refined.content),
+      /Seeded protocol test study/,
+    );
 
     const exported = await client.callTool({
       name: "export_results",

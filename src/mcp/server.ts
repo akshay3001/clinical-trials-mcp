@@ -413,7 +413,7 @@ export function createServer(): McpServer {
     {
       title: "Search Clinical Trials",
       description:
-        "Search ClinicalTrials.gov using condition, intervention, location, sponsor, phase, status, or general terms. Returns a session ID for refinement, summaries, and export.",
+        "Search ClinicalTrials.gov using condition, intervention, location, sponsor, phase, status, or general terms. Returns only the result count and a session ID; call summarize_session when you want study summaries.",
       inputSchema: searchTrialsInputSchema,
     },
     async ({ fetchAll, fetchLimit, ...searchParamsInput }, ctx) => {
@@ -480,12 +480,11 @@ export function createServer(): McpServer {
         );
         db.createSession(sessionId, searchParams, nctIds);
 
-        const summary = formatStudyList(studies, 10);
         return {
           content: [
             {
               type: "text",
-              text: `${summary}\n**Session ID:** ${sessionId}\n\nUse this session ID to refine results, get summaries, or export data.`,
+              text: `Search found ${studies.length.toLocaleString("en-US")} ${studies.length === 1 ? "study" : "studies"}.\n**Session ID:** ${sessionId}\n\nUse this session ID to refine results, call summarize_session for study summaries, or export data.`,
             },
           ],
         };
@@ -500,7 +499,7 @@ export function createServer(): McpServer {
     {
       title: "Refine Trial Results",
       description:
-        "Filter results from an existing search session without making a new ClinicalTrials.gov API call.",
+        "Filter results from an existing search session without making a new ClinicalTrials.gov API call. Returns only the before/after counts and session ID; call summarize_session when you want study summaries.",
       inputSchema: refineResultsInputSchema,
     },
     async ({ sessionId, ...filterParamsInput }) => {
@@ -517,12 +516,11 @@ export function createServer(): McpServer {
         );
         db.updateSessionResults(sessionId, nctIds);
 
-        const summary = formatStudyList(filteredStudies, 10);
         return {
           content: [
             {
               type: "text",
-              text: `Filtered to ${filteredStudies.length} studies (from ${studies.length})\n\n${summary}`,
+              text: `Filtered from ${studies.length.toLocaleString("en-US")} to ${filteredStudies.length.toLocaleString("en-US")} ${filteredStudies.length === 1 ? "study" : "studies"}.\n**Session ID:** ${sessionId}\n\nUse this session ID for further refinement, call summarize_session for study summaries, or export data.`,
             },
           ],
         };
@@ -573,7 +571,7 @@ export function createServer(): McpServer {
     {
       title: "Summarize Search Session",
       description:
-        "Summarize trials and their key details from a search session.",
+        "Return study summaries from a search session after search or refinement.",
       inputSchema: summarizeSessionInputSchema,
     },
     async ({ sessionId, maxResults }) => {

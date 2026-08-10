@@ -150,16 +150,17 @@ Find interventional trials with single masking
 Search for diabetes trials, then filter to children (age 0-17) with quadruple-blind masking in Phase 4
 ```
 
-**Expected:** Should return "Filtered to 0 studies" gracefully (unlikely combination)
+**Expected:** Should return "Filtered from ... to 0 studies" gracefully (unlikely combination)
 
 ### 15. Session Chaining
 ```
-Search for cancer trials, get session ID, then use get_trial_details on first result's NCT ID
+Search for cancer trials, request a session summary, then use get_trial_details on the first result's NCT ID
 ```
 
 **Expected Flow:**
 - `search_trials`: condition="cancer"
-- Note first NCT ID from results
+- `summarize_session`: sessionId="...", maxResults=10
+- Note first NCT ID from the summary
 - `get_trial_details`: nctId="NCT...", includeEligibility=true
 
 ---
@@ -219,24 +220,24 @@ Search for cystic fibrosis trials accepting children, then filter to:
 
 ## Expected Output Patterns
 
-**Successful Filter:**
+**Search:**
 ```
-Filtered to 15 studies (from 143)
-
-1. NCT12345678 - Study Title Here
-   Phase: Phase 3 | Status: Recruiting
-   Location: California, United States
-   Enrollment: 250 participants
-   ...
-
+Search found 1,000 studies.
 **Session ID:** 550e8400-e29b-41d4-a716-446655440000
 ```
 
+**Successful Filter:**
+```
+Filtered from 143 to 15 studies.
+**Session ID:** 550e8400-e29b-41d4-a716-446655440000
+```
+
+Call `summarize_session` with the session ID when study summaries are needed.
+
 **No Results After Filter:**
 ```
-Filtered to 0 studies (from 143)
-
-No studies match the specified criteria. Try relaxing some filters.
+Filtered from 143 to 0 studies.
+**Session ID:** 550e8400-e29b-41d4-a716-446655440000
 ```
 
 **Error Handling:**
