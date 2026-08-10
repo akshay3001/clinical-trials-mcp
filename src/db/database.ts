@@ -4,11 +4,31 @@ import path from "path";
 import fs from "fs";
 
 const DEFAULT_DB_PATH = "./data/clinical-trials.db";
+export const DEFAULT_SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+
+export interface SearchSessionMetadata {
+  sessionId: string;
+  searchParams: unknown;
+  createdAt: string;
+  lastAccessedAt: string;
+  expiresAt: string;
+  resultCount: number;
+}
 
 export class DatabaseManager {
   private db: Database.Database;
+  private readonly sessionTtlMs: number;
 
-  constructor(dbPath: string = DEFAULT_DB_PATH) {
+  constructor(
+    dbPath: string = DEFAULT_DB_PATH,
+    sessionTtlMs: number = DEFAULT_SESSION_TTL_MS,
+  ) {
+    if (!Number.isFinite(sessionTtlMs) || sessionTtlMs <= 0) {
+      throw new RangeError("sessionTtlMs must be a positive finite number");
+    }
+
+    this.sessionTtlMs = sessionTtlMs;
+
     // Ensure data directory exists
     const dir = path.dirname(dbPath);
     if (!fs.existsSync(dir)) {
@@ -131,7 +151,8 @@ export class DatabaseManager {
         session_id TEXT PRIMARY KEY,
         search_params TEXT NOT NULL,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        last_accessed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        last_accessed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        expires_at INTEGER
       );
 
       -- Session results (many-to-many between sessions and studies)
@@ -195,6 +216,7 @@ export class DatabaseManager {
 
     // Run migration to add new columns if they don't exist
     this.migrateSchema();
+    this.cleanupExpiredSessions();
   }
 
   /**
@@ -227,6 +249,26 @@ export class DatabaseManager {
 
     // Backfill new columns from raw_json for existing data
     this.backfillDenormalizedFields();
+
+    const sessionColumns = this.db.pragma(
+      "table_info(search_sessions)",
+    ) as Array<{ name: string }>;
+    const sessionColumnNames = sessionColumns.map((column) => column.name);
+
+    if (!sessionColumnNames.includes("expires_at")) {
+      this.db.exec("ALTER TABLE search_sessions ADD COLUMN expires_at INTEGER");
+    }
+
+    // Existing sessions receive a full grace period rather than expiring as
+    // soon as a database created by an older version is opened.
+    this.db
+      .prepare(
+        "UPDATE search_sessions SET expires_at = ? WHERE expires_at IS NULL",
+      )
+      .run(this.getExpirationEpochSeconds());
+    this.db.exec(
+      "CREATE INDEX IF NOT EXISTS idx_search_sessions_expires_at ON search_sessions(expires_at)",
+    );
   }
 
   /**
@@ -553,34 +595,105 @@ export class DatabaseManager {
    * Create search session
    */
   createSession(sessionId: string, searchParams: any, nctIds: string[]): void {
-    const insertSession = this.db.prepare(`
-      INSERT INTO search_sessions (session_id, search_params)
-      VALUES (?, ?)
-    `);
+    this.cleanupExpiredSessions();
 
-    insertSession.run(sessionId, JSON.stringify(searchParams));
+    const insertSession = this.db.prepare(`
+      INSERT INTO search_sessions (session_id, search_params, expires_at)
+      VALUES (?, ?, ?)
+    `);
 
     const insertResult = this.db.prepare(`
       INSERT INTO session_results (session_id, nct_id)
       VALUES (?, ?)
     `);
 
-    for (const nctId of nctIds) {
-      insertResult.run(sessionId, nctId);
+    const create = this.db.transaction(() => {
+      insertSession.run(
+        sessionId,
+        JSON.stringify(searchParams),
+        this.getExpirationEpochSeconds(),
+      );
+
+      for (const nctId of nctIds) {
+        insertResult.run(sessionId, nctId);
+      }
+    });
+
+    create();
+  }
+
+  /**
+   * Return metadata for an active session. Unlike getSessionResults, this
+   * distinguishes a valid session with no results from a missing session.
+   */
+  getSessionMetadata(
+    sessionId: string,
+    touch: boolean = false,
+  ): SearchSessionMetadata | null {
+    if (touch && !this.touchSession(sessionId)) {
+      return null;
     }
+
+    const stmt = this.db.prepare(`
+      SELECT
+        ss.session_id,
+        ss.search_params,
+        ss.created_at,
+        ss.last_accessed_at,
+        ss.expires_at,
+        COUNT(sr.nct_id) AS result_count
+      FROM search_sessions ss
+      LEFT JOIN session_results sr ON ss.session_id = sr.session_id
+      WHERE ss.session_id = ?
+        AND ss.expires_at > ?
+      GROUP BY ss.session_id
+    `);
+    const row = stmt.get(sessionId, this.getCurrentEpochSeconds()) as
+      | {
+          session_id: string;
+          search_params: string;
+          created_at: string;
+          last_accessed_at: string;
+          expires_at: number;
+          result_count: number;
+        }
+      | undefined;
+
+    if (!row) {
+      return null;
+    }
+
+    let searchParams: unknown;
+    try {
+      searchParams = JSON.parse(row.search_params);
+    } catch {
+      searchParams = null;
+    }
+
+    return {
+      sessionId: row.session_id,
+      searchParams,
+      createdAt: row.created_at,
+      lastAccessedAt: row.last_accessed_at,
+      expiresAt: new Date(row.expires_at * 1000).toISOString(),
+      resultCount: row.result_count,
+    };
+  }
+
+  /**
+   * Check whether a session exists and has not expired.
+   */
+  sessionExists(sessionId: string): boolean {
+    return this.getSessionMetadata(sessionId) !== null;
   }
 
   /**
    * Get session results
    */
   getSessionResults(sessionId: string): Study[] {
-    // Update last accessed time
-    const updateSession = this.db.prepare(`
-      UPDATE search_sessions 
-      SET last_accessed_at = CURRENT_TIMESTAMP 
-      WHERE session_id = ?
-    `);
-    updateSession.run(sessionId);
+    if (!this.touchSession(sessionId)) {
+      return [];
+    }
 
     // Get studies
     const stmt = this.db.prepare(`
@@ -597,30 +710,62 @@ export class DatabaseManager {
   /**
    * Update session results (for refinement)
    */
-  updateSessionResults(sessionId: string, nctIds: string[]): void {
-    // Delete existing results
+  updateSessionResults(sessionId: string, nctIds: string[]): boolean {
     const deleteResults = this.db.prepare(`
       DELETE FROM session_results WHERE session_id = ?
     `);
-    deleteResults.run(sessionId);
 
-    // Insert new results
     const insertResult = this.db.prepare(`
       INSERT INTO session_results (session_id, nct_id)
       VALUES (?, ?)
     `);
 
-    for (const nctId of nctIds) {
-      insertResult.run(sessionId, nctId);
-    }
+    const update = this.db.transaction(() => {
+      if (!this.touchSession(sessionId)) {
+        return false;
+      }
 
-    // Update last accessed
-    const updateSession = this.db.prepare(`
-      UPDATE search_sessions 
-      SET last_accessed_at = CURRENT_TIMESTAMP 
-      WHERE session_id = ?
-    `);
-    updateSession.run(sessionId);
+      deleteResults.run(sessionId);
+      for (const nctId of nctIds) {
+        insertResult.run(sessionId, nctId);
+      }
+      return true;
+    });
+
+    return update();
+  }
+
+  /**
+   * Delete expired sessions and their results via the foreign-key cascade.
+   */
+  cleanupExpiredSessions(nowMs: number = Date.now()): number {
+    const result = this.db
+      .prepare("DELETE FROM search_sessions WHERE expires_at <= ?")
+      .run(this.getCurrentEpochSeconds(nowMs));
+    return result.changes;
+  }
+
+  private touchSession(sessionId: string): boolean {
+    const result = this.db
+      .prepare(
+        `UPDATE search_sessions
+         SET last_accessed_at = CURRENT_TIMESTAMP, expires_at = ?
+         WHERE session_id = ? AND expires_at > ?`,
+      )
+      .run(
+        this.getExpirationEpochSeconds(),
+        sessionId,
+        this.getCurrentEpochSeconds(),
+      );
+    return result.changes > 0;
+  }
+
+  private getCurrentEpochSeconds(nowMs: number = Date.now()): number {
+    return Math.floor(nowMs / 1000);
+  }
+
+  private getExpirationEpochSeconds(nowMs: number = Date.now()): number {
+    return Math.ceil((nowMs + this.sessionTtlMs) / 1000);
   }
 
   /**

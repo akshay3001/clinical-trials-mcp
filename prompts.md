@@ -150,7 +150,7 @@ Find interventional trials with single masking
 Search for diabetes trials, then filter to children (age 0-17) with quadruple-blind masking in Phase 4
 ```
 
-**Expected:** Should return "Filtered to 0 studies" gracefully (unlikely combination)
+**Expected:** Should return "Filtered from ... to 0 studies" gracefully (unlikely combination)
 
 ### 15. Session Chaining
 ```
@@ -223,13 +223,13 @@ Search for cystic fibrosis trials accepting children, then filter to:
 **Search:**
 ```
 Search found 1,000 studies.
-**Session ID:** session_1234567890_abc123
+**Session ID:** 550e8400-e29b-41d4-a716-446655440000
 ```
 
 **Successful Filter:**
 ```
 Filtered from 143 to 15 studies.
-**Session ID:** session_1234567890_abc123
+**Session ID:** 550e8400-e29b-41d4-a716-446655440000
 ```
 
 Call `summarize_session` with the session ID when study summaries are needed.
@@ -237,12 +237,12 @@ Call `summarize_session` with the session ID when study summaries are needed.
 **No Results After Filter:**
 ```
 Filtered from 143 to 0 studies.
-**Session ID:** session_1234567890_abc123
+**Session ID:** 550e8400-e29b-41d4-a716-446655440000
 ```
 
 **Error Handling:**
 ```
-Error: Session session_invalid_123 not found or has no results.
+Error: Session session_invalid_123 was not found.
 ```
 
 ---

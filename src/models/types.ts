@@ -13,7 +13,7 @@ export const SearchParamsSchema = z.object({
   enrollmentMax: z.number().optional(),
   startDateAfter: z.string().optional(),
   startDateBefore: z.string().optional(),
-  pageSize: z.number().min(1).max(1000).default(100),
+  pageSize: z.number().min(1).max(1000).default(1000),
   pageToken: z.string().optional(),
   fields: z.array(z.string()).optional(),
 });
