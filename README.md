@@ -40,8 +40,19 @@ Add to your `mcp.json`:
 The tool creates sessions that allow you to refine searches without hitting the API again:
 
 1. Initial search hits API and stores results
-2. Filter operations work on cached results
-3. Session persists in database for future access
+2. Search and filter operations return compact counts plus a session ID, keeping progressive workflows small
+3. Filter operations work on cached results
+4. Call `summarize_session` when you want study summaries, or `export_results` for the complete result set
+5. Session persists in database for future access
+
+`search_trials` and `refine_results` do not include a study list in their responses. A typical refinement response is:
+
+```
+Filtered from 1,000 to 174 studies.
+Session ID: session_123
+```
+
+Use the returned session ID with `summarize_session` to request study summaries after the refinement steps are complete.
 
 ### Smart Caching
 

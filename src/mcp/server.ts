@@ -43,7 +43,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       {
         name: "search_trials",
         description:
-          "Search for clinical trials using various criteria. Returns a session ID for iterative refinement. Searches across 19 specialized areas including conditions, interventions, locations, sponsors, and more.",
+          "Search for clinical trials using various criteria. Returns only the result count and a session ID for iterative refinement; call summarize_session when you want study summaries. Searches across 19 specialized areas including conditions, interventions, locations, sponsors, and more.",
         inputSchema: {
           type: "object",
           properties: {
@@ -96,7 +96,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       {
         name: "refine_results",
         description:
-          "Filter existing search results without making a new API call. Applies additional criteria to narrow down results from a previous search session.",
+          "Filter existing search results without making a new API call. Returns only the before/after counts and session ID; call summarize_session when you want study summaries. Applies additional criteria to narrow down results from a previous search session.",
         inputSchema: {
           type: "object",
           properties: {
@@ -264,7 +264,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       {
         name: "summarize_session",
         description:
-          "Get a summary of all trials in a search session with their key details.",
+          "Return study summaries from a search session after search/refinement. Use this explicit summary step when you want study details.",
         inputSchema: {
           type: "object",
           properties: {
@@ -385,14 +385,11 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         );
         db.createSession(sessionId, searchParams, nctIds);
 
-        // Format output
-        const summary = formatStudyList(studies, 10);
-
         return {
           content: [
             {
               type: "text",
-              text: `${summary}\n**Session ID:** ${sessionId}\n\nUse this session ID to refine results, get summaries, or export data.`,
+              text: `Search found ${studies.length.toLocaleString("en-US")} ${studies.length === 1 ? "study" : "studies"}.\n**Session ID:** ${sessionId}\n\nUse this session ID to refine results, call summarize_session for study summaries, or export data.`,
             },
           ],
         };
@@ -426,13 +423,11 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         );
         db.updateSessionResults(sessionId, nctIds);
 
-        const summary = formatStudyList(filteredStudies, 10);
-
         return {
           content: [
             {
               type: "text",
-              text: `Filtered to ${filteredStudies.length} studies (from ${studies.length})\n\n${summary}`,
+              text: `Filtered from ${studies.length.toLocaleString("en-US")} to ${filteredStudies.length.toLocaleString("en-US")} ${filteredStudies.length === 1 ? "study" : "studies"}.\n**Session ID:** ${sessionId}\n\nUse this session ID for further refinement, call summarize_session for study summaries, or export data.`,
             },
           ],
         };
