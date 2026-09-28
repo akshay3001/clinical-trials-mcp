@@ -5,7 +5,7 @@ import path from "node:path";
 import test from "node:test";
 
 import Database from "better-sqlite3";
-import type { Study } from "../src/models/types.js";
+import type { FilterParams, Study } from "../src/models/types.js";
 
 const originalWorkingDirectory = process.cwd();
 const runtimeDirectory = fs.mkdtempSync(
@@ -105,6 +105,10 @@ test("migrates studies and sessions created by older schema versions", () => {
       INSERT INTO studies_fts(rowid, nct_id, brief_title, official_title, brief_summary, detailed_description)
       VALUES (new.rowid, new.nct_id, new.brief_title, new.official_title, new.brief_summary, new.detailed_description);
     END;
+    -- The old update trigger left stale terms in the external content index.
+    CREATE TRIGGER studies_au AFTER UPDATE ON studies BEGIN
+      UPDATE studies_fts SET brief_title = new.brief_title WHERE rowid = new.rowid;
+    END;
     CREATE TABLE search_sessions (
       session_id TEXT PRIMARY KEY,
       search_params TEXT NOT NULL,
@@ -127,6 +131,18 @@ test("migrates studies and sessions created by older schema versions", () => {
     assert.ok(metadata);
     assert.deepEqual(metadata.searchParams, { condition: "diabetes" });
     assert.ok(Date.parse(metadata.expiresAt) > Date.now());
+
+    migratedDatabase.upsertStudy({
+      protocolSection: {
+        ...legacyStudy.protocolSection,
+        identificationModule: { nctId: "NCT00000009", briefTitle: "Renamed" },
+        statusModule: { overallStatus: "RECRUITING" },
+      },
+    } as Study);
+    assert.deepEqual(migratedDatabase.fullTextSearch("Legacy"), []);
+    assert.deepEqual(migratedDatabase.fullTextSearch("Renamed"), [
+      "NCT00000009",
+    ]);
   } finally {
     migratedDatabase.close();
   }
@@ -140,6 +156,57 @@ test("migrates studies and sessions created by older schema versions", () => {
         )
         .get("NCT00000009"),
       { allocation: "RANDOMIZED", fdaDrug: 1 },
+    );
+  } finally {
+    reopenedDatabase.close();
+  }
+});
+
+test("stores studies atomically and skips related rows missing required fields", () => {
+  const databasePath = path.join(runtimeDirectory, "atomic", "studies.db");
+  const database = new DatabaseManager(databasePath);
+  const nctId = "NCT00000010";
+
+  try {
+    database.upsertStudy({
+      protocolSection: {
+        identificationModule: { nctId, briefTitle: "Atomic" },
+        statusModule: { overallStatus: "RECRUITING" },
+        armsInterventionsModule: {
+          interventions: [{ type: "DRUG", name: "Aspirin" }, { type: "DRUG" }],
+        },
+        outcomesModule: { primaryOutcomes: [{ description: "No measure" }] },
+      },
+    } as Study);
+    assert.equal(
+      database.getStudy(nctId)?.protocolSection.identificationModule.briefTitle,
+      "Atomic",
+    );
+
+    // Force a failure in a related insert and check the core row rolls back.
+    assert.throws(() =>
+      database.upsertStudy({
+        protocolSection: {
+          identificationModule: { nctId: "NCT00000011", briefTitle: "Partial" },
+          statusModule: { overallStatus: "RECRUITING" },
+          conditionsModule: { conditions: [{}] },
+        },
+      } as unknown as Study),
+    );
+    assert.equal(database.getStudy("NCT00000011"), null);
+  } finally {
+    database.close();
+  }
+
+  const reopenedDatabase = new Database(databasePath, { readonly: true });
+  try {
+    assert.deepEqual(
+      reopenedDatabase
+        .prepare(
+          "SELECT intervention_type AS type, intervention_name AS name FROM interventions WHERE nct_id = ?",
+        )
+        .all(nctId),
+      [{ type: "DRUG", name: "Aspirin" }],
     );
   } finally {
     reopenedDatabase.close();
@@ -237,4 +304,54 @@ test("compares refinement age bounds numerically across units", () => {
     "NCT00000003",
   ]);
   assert.throws(() => matchingIds({ minAge: "adult" }), /minAge/);
+});
+
+test("excludes studies with missing values when numeric or date bounds are set", () => {
+  const studyWith = (nctId: string, enrollment?: number, startDate?: string) =>
+    ({
+      protocolSection: {
+        identificationModule: { nctId, briefTitle: nctId },
+        statusModule: {
+          overallStatus: "RECRUITING",
+          startDateStruct: startDate ? { date: startDate } : undefined,
+        },
+        designModule: {
+          enrollmentInfo:
+            enrollment === undefined ? undefined : { count: enrollment },
+        },
+      },
+    }) as Study;
+  const studies = [
+    studyWith("NCT00000001", 150, "2021-05-10"),
+    studyWith("NCT00000002"),
+    studyWith("NCT00000003", 50, "2020"),
+    studyWith("NCT00000004", 100, "2020-02"),
+  ];
+  const matchingIds = (filters: FilterParams) =>
+    helperModule
+      .filterStudies(studies, filters)
+      .map((study) => study.protocolSection.identificationModule.nctId);
+
+  assert.deepEqual(matchingIds({ enrollmentMin: 100 }), [
+    "NCT00000001",
+    "NCT00000004",
+  ]);
+  assert.deepEqual(matchingIds({ enrollmentMax: 100 }), [
+    "NCT00000003",
+    "NCT00000004",
+  ]);
+  assert.deepEqual(matchingIds({ startDateAfter: "2020-01-01" }), [
+    "NCT00000001",
+    "NCT00000003",
+    "NCT00000004",
+  ]);
+  // A partial date passes only if its whole period is inside the bounds.
+  assert.deepEqual(matchingIds({ startDateAfter: "2020-02-01" }), [
+    "NCT00000001",
+    "NCT00000004",
+  ]);
+  assert.deepEqual(matchingIds({ startDateBefore: "2020-02-28" }), []);
+  assert.deepEqual(matchingIds({ startDateBefore: "2020-02-29" }), [
+    "NCT00000004",
+  ]);
 });

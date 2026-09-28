@@ -188,29 +188,59 @@ export class DatabaseManager {
         content_rowid=rowid
       );
 
-      -- Triggers to keep FTS in sync
+    `);
+    this.createFtsTriggers();
+
+    // Run migration to add new columns if they don't exist
+    this.migrateSchema();
+    this.cleanupExpiredSessions();
+  }
+
+  /**
+   * Keep studies_fts in sync with studies. studies_fts is an external content
+   * table, so old terms must be removed with the FTS5 'delete' command and the
+   * old column values. A plain UPDATE or DELETE leaves them in the index.
+   */
+  private createFtsTriggers(): void {
+    this.db.exec(`
       CREATE TRIGGER IF NOT EXISTS studies_ai AFTER INSERT ON studies BEGIN
         INSERT INTO studies_fts(rowid, nct_id, brief_title, official_title, brief_summary, detailed_description)
         VALUES (new.rowid, new.nct_id, new.brief_title, new.official_title, new.brief_summary, new.detailed_description);
       END;
 
       CREATE TRIGGER IF NOT EXISTS studies_ad AFTER DELETE ON studies BEGIN
-        DELETE FROM studies_fts WHERE rowid = old.rowid;
+        INSERT INTO studies_fts(studies_fts, rowid, nct_id, brief_title, official_title, brief_summary, detailed_description)
+        VALUES ('delete', old.rowid, old.nct_id, old.brief_title, old.official_title, old.brief_summary, old.detailed_description);
       END;
 
       CREATE TRIGGER IF NOT EXISTS studies_au AFTER UPDATE ON studies BEGIN
-        UPDATE studies_fts 
-        SET brief_title = new.brief_title,
-            official_title = new.official_title,
-            brief_summary = new.brief_summary,
-            detailed_description = new.detailed_description
-        WHERE rowid = new.rowid;
+        INSERT INTO studies_fts(studies_fts, rowid, nct_id, brief_title, official_title, brief_summary, detailed_description)
+        VALUES ('delete', old.rowid, old.nct_id, old.brief_title, old.official_title, old.brief_summary, old.detailed_description);
+        INSERT INTO studies_fts(rowid, nct_id, brief_title, official_title, brief_summary, detailed_description)
+        VALUES (new.rowid, new.nct_id, new.brief_title, new.official_title, new.brief_summary, new.detailed_description);
       END;
     `);
+  }
 
-    // Run migration to add new columns if they don't exist
-    this.migrateSchema();
-    this.cleanupExpiredSessions();
+  /**
+   * Replace FTS triggers from older versions, which left stale terms in the
+   * index, and rebuild the index from the studies table. Runs once per
+   * database, tracked with PRAGMA user_version.
+   */
+  private migrateFtsTriggers(): void {
+    if ((this.db.pragma("user_version", { simple: true }) as number) >= 1) {
+      return;
+    }
+
+    this.db.transaction(() => {
+      this.db.exec(`
+        DROP TRIGGER IF EXISTS studies_ad;
+        DROP TRIGGER IF EXISTS studies_au;
+      `);
+      this.createFtsTriggers();
+      this.db.exec("INSERT INTO studies_fts(studies_fts) VALUES ('rebuild')");
+      this.db.pragma("user_version = 1");
+    })();
   }
 
   /**
@@ -254,6 +284,7 @@ export class DatabaseManager {
 
     // Backfill new columns from raw_json for existing data
     this.backfillDenormalizedFields();
+    this.migrateFtsTriggers();
 
     const sessionColumns = this.db.pragma(
       "table_info(search_sessions)",
@@ -325,9 +356,14 @@ export class DatabaseManager {
   }
 
   /**
-   * Insert or update a study
+   * Insert or update a study and its related rows in one transaction, so a
+   * failed write leaves no partial data.
    */
   upsertStudy(study: Study): void {
+    this.db.transaction(() => this.writeStudy(study))();
+  }
+
+  private writeStudy(study: Study): void {
     const protocol = study.protocolSection;
     const identification = protocol.identificationModule;
     const status = protocol.statusModule;
@@ -486,13 +522,10 @@ export class DatabaseManager {
         "INSERT OR IGNORE INTO interventions (nct_id, intervention_type, intervention_name, description) VALUES (?, ?, ?, ?)",
       );
 
-      for (const intervention of interventions.interventions) {
-        insertIntervention.run(
-          nctId,
-          intervention.type,
-          intervention.name,
-          intervention.description || null,
-        );
+      // The table requires a type and name. Other interventions stay in raw_json.
+      for (const { type, name, description } of interventions.interventions) {
+        if (!type || !name) continue;
+        insertIntervention.run(nctId, type, name, description || null);
       }
     }
 
@@ -521,7 +554,8 @@ export class DatabaseManager {
       }
     }
 
-    // Insert primary outcomes
+    // Insert primary outcomes. The table requires a measure, so outcomes
+    // without one stay only in raw_json.
     const outcomes = protocol.outcomesModule;
     if (outcomes?.primaryOutcomes) {
       const deletePrimary = this.db.prepare(
@@ -534,6 +568,7 @@ export class DatabaseManager {
       );
 
       for (const outcome of outcomes.primaryOutcomes) {
+        if (!outcome.measure) continue;
         insertPrimary.run(
           nctId,
           outcome.measure,
@@ -555,6 +590,7 @@ export class DatabaseManager {
       );
 
       for (const outcome of outcomes.secondaryOutcomes) {
+        if (!outcome.measure) continue;
         insertSecondary.run(
           nctId,
           outcome.measure,
