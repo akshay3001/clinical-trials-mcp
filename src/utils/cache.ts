@@ -94,7 +94,7 @@ export class CacheManager {
 
     try {
       const content = fs.readFileSync(filePath, "utf-8");
-      const entry: CacheEntry<T> = JSON.parse(content);
+      const entry = this.parseCacheEntry<T>(content);
 
       const age = Date.now() - entry.timestamp;
       if (age > DISK_CACHE_TTL_MS) {
@@ -123,6 +123,28 @@ export class CacheManager {
     fs.writeFileSync(filePath, JSON.stringify(entry, null, 2), "utf-8");
   }
 
+  private parseCacheEntry<T>(content: string): CacheEntry<T> {
+    const entry: unknown = JSON.parse(content);
+    if (!entry || typeof entry !== "object") {
+      throw new Error("Invalid cache entry");
+    }
+
+    const cacheEntry = entry as Record<string, unknown>;
+    if (
+      !Object.hasOwn(cacheEntry, "data") ||
+      !Object.hasOwn(cacheEntry, "timestamp") ||
+      typeof cacheEntry.timestamp !== "number" ||
+      !Number.isFinite(cacheEntry.timestamp)
+    ) {
+      throw new Error("Invalid cache entry");
+    }
+
+    return {
+      data: cacheEntry.data as T,
+      timestamp: cacheEntry.timestamp,
+    };
+  }
+
   /**
    * Get cached data (checks memory first, then disk)
    */
@@ -131,13 +153,13 @@ export class CacheManager {
 
     // Try memory cache first
     const memoryData = this.getFromMemory<T>(key);
-    if (memoryData) {
+    if (memoryData !== null) {
       return memoryData;
     }
 
     // Try disk cache
     const diskData = this.getFromDisk<T>(key);
-    if (diskData) {
+    if (diskData !== null) {
       // Promote to memory cache
       this.setInMemory(key, diskData);
       return diskData;
@@ -199,11 +221,14 @@ export class CacheManager {
     // Clear expired disk cache
     const files = fs.readdirSync(this.cacheDir);
     for (const file of files) {
+      if (!file.endsWith(".json")) {
+        continue;
+      }
       const filePath = path.join(this.cacheDir, file);
 
       try {
         const content = fs.readFileSync(filePath, "utf-8");
-        const entry = JSON.parse(content);
+        const entry = this.parseCacheEntry<unknown>(content);
 
         const age = now - entry.timestamp;
         if (age > DISK_CACHE_TTL_MS) {

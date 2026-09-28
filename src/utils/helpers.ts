@@ -1,6 +1,29 @@
 import { Study, FilterParams } from "../models/types.js";
 import { randomUUID } from "node:crypto";
 
+const AGE_IN_DAYS: Record<string, number> = {
+  year: 365.25,
+  month: 365.25 / 12,
+  week: 7,
+  day: 1,
+};
+
+function parseAgeInDays(age: string): number | undefined {
+  const match = /^(\d+(?:\.\d+)?)\s*(years?|months?|weeks?|days?)$/i.exec(
+    age.trim(),
+  );
+  if (!match) return undefined;
+
+  const value = Number(match[1]);
+  const unit = match[2].toLowerCase().replace(/s$/, "");
+  return Number.isFinite(value) ? value * AGE_IN_DAYS[unit] : undefined;
+}
+
+function normalizePhase(phase: string): string {
+  const normalized = phase.toUpperCase().replace(/[^A-Z0-9]/g, "");
+  return normalized === "NOTAPPLICABLE" ? "NA" : normalized;
+}
+
 /**
  * Filter studies based on refinement criteria
  */
@@ -14,21 +37,22 @@ export function filterStudies(
     // Phase filtering according to ClinicalTrials.gov API enum values:
     // NA (Not Applicable), EARLY_PHASE1 (Early Phase 1), PHASE1 (Phase 1),
     // PHASE2 (Phase 2), PHASE3 (Phase 3), PHASE4 (Phase 4)
-    if (filters && (filters as any).phase) {
-      const phaseFilter = (filters as any).phase;
+    if (filters.phase) {
+      const phaseFilter = filters.phase;
       const phases = protocol.designModule?.phases || [];
 
-      // Normalize phase filter to match API source values (case-insensitive)
-      const normalizedFilter = phaseFilter.toLowerCase();
+      // Accept human-readable input ("Phase 1") and API enum values
+      // ("PHASE1" / "EARLY_PHASE1") equivalently.
+      const normalizedFilter = normalizePhase(phaseFilter);
 
       // Check if study has the requested phase
-      const hasMatchingPhase = phases.some((p: string) => {
-        const normalizedPhase = p.toLowerCase();
+      const hasMatchingPhase = phases.some((phase) => {
+        const normalizedPhase = normalizePhase(phase);
         // Handle exact match or early phase variants
-        if (normalizedFilter === "phase 1") {
+        if (normalizedFilter === "PHASE1") {
           // Accept "Phase 1" or "Early Phase 1" for Phase 1 searches
           return (
-            normalizedPhase === "phase 1" || normalizedPhase === "early phase 1"
+            normalizedPhase === "PHASE1" || normalizedPhase === "EARLYPHASE1"
           );
         }
         return normalizedPhase === normalizedFilter;
@@ -69,30 +93,34 @@ export function filterStudies(
     }
 
     // Filter by enrollment
-    if (filters.enrollmentMin !== undefined && enrollment !== undefined) {
-      if (enrollment < filters.enrollmentMin) return false;
+    if (filters.enrollmentMin !== undefined) {
+      if (enrollment === undefined || enrollment < filters.enrollmentMin)
+        return false;
     }
 
-    if (filters.enrollmentMax !== undefined && enrollment !== undefined) {
-      if (enrollment > filters.enrollmentMax) return false;
+    if (filters.enrollmentMax !== undefined) {
+      if (enrollment === undefined || enrollment > filters.enrollmentMax)
+        return false;
     }
 
     // Filter by start date
-    if (filters.startDateAfter && startDate) {
-      if (startDate < filters.startDateAfter) return false;
+    if (filters.startDateAfter) {
+      if (!startDate || startDate < filters.startDateAfter) return false;
     }
 
-    if (filters.startDateBefore && startDate) {
-      if (startDate > filters.startDateBefore) return false;
+    if (filters.startDateBefore) {
+      if (!startDate || startDate > filters.startDateBefore) return false;
     }
 
     // Filter by completion date
-    if (filters.completionDateAfter && completionDate) {
-      if (completionDate < filters.completionDateAfter) return false;
+    if (filters.completionDateAfter) {
+      if (!completionDate || completionDate < filters.completionDateAfter)
+        return false;
     }
 
-    if (filters.completionDateBefore && completionDate) {
-      if (completionDate > filters.completionDateBefore) return false;
+    if (filters.completionDateBefore) {
+      if (!completionDate || completionDate > filters.completionDateBefore)
+        return false;
     }
 
     // Filter by intervention type
@@ -168,17 +196,31 @@ export function filterStudies(
     // Filter by minimum age
     if (filters.minAge) {
       const studyMinAge = protocol.eligibilityModule?.minimumAge;
-      if (!studyMinAge || studyMinAge === "N/A") return false;
-      // Simple string comparison (e.g., "18 Years" vs "21 Years")
-      if (studyMinAge < filters.minAge) return false;
+      const normalizedStudyMinAge = studyMinAge
+        ? parseAgeInDays(studyMinAge)
+        : undefined;
+      const normalizedFilterMinAge = parseAgeInDays(filters.minAge);
+      if (
+        normalizedStudyMinAge === undefined ||
+        normalizedFilterMinAge === undefined ||
+        normalizedStudyMinAge < normalizedFilterMinAge
+      )
+        return false;
     }
 
     // Filter by maximum age
     if (filters.maxAge) {
       const studyMaxAge = protocol.eligibilityModule?.maximumAge;
-      if (!studyMaxAge || studyMaxAge === "N/A") return false;
-      // Simple string comparison
-      if (studyMaxAge > filters.maxAge) return false;
+      const normalizedStudyMaxAge = studyMaxAge
+        ? parseAgeInDays(studyMaxAge)
+        : undefined;
+      const normalizedFilterMaxAge = parseAgeInDays(filters.maxAge);
+      if (
+        normalizedStudyMaxAge === undefined ||
+        normalizedFilterMaxAge === undefined ||
+        normalizedStudyMaxAge > normalizedFilterMaxAge
+      )
+        return false;
     }
 
     // Phase 3 filters

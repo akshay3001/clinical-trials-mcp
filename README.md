@@ -92,6 +92,27 @@ Large paginated searches are bounded to 10,000 studies and 100 API pages. Set
 `fetchLimit` to a smaller total when using `fetchAll`; it cannot exceed
 `pageSize × 100`.
 
+## Local Regression Harness
+
+Run the deterministic end-to-end regression harness after changing MCP tool
+behavior, API/cache logic, persistence, refinement, or exports:
+
+```bash
+npm run regression
+```
+
+The harness builds and launches the compiled stdio server in an isolated
+temporary directory, replaces ClinicalTrials.gov requests with committed
+fixtures, and exercises search, caching, pagination, sessions, cumulative
+refinement, details, exports, errors, and modern/legacy protocol negotiation.
+It does not use the network or the normal `data/`, `cache/`, or `exports/`
+directories.
+
+Successful runs clean up automatically. `npm run regression:keep` preserves a
+successful run under `.tmp/regression/`; failed runs are always preserved there
+for debugging. Use `npm run regression:live` only when you explicitly want a
+small network-dependent smoke test against ClinicalTrials.gov.
+
 ## Architecture
 
 - **Core API Client**: Handles ClinicalTrials.gov API v2 communication

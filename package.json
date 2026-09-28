@@ -9,9 +9,12 @@
     "dev": "tsc --watch",
     "start:mcp": "node dist/mcp/server.js",
     "test": "npm run build && node --import tsx --test --test-concurrency=1 test/*.test.ts",
+    "regression": "npm run build && node --import tsx tools/regression/run.ts",
+    "regression:keep": "npm run build && node --import tsx tools/regression/run.ts --keep",
+    "regression:live": "npm run build && node --import tsx tools/regression/run.ts --live",
     "typecheck:test": "tsc -p tsconfig.test.json",
-    "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
-    "format:check": "prettier --check \"src/**/*.ts\" \"test/**/*.ts\""
+    "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\" \"tools/**/*.{ts,mjs,json}\"",
+    "format:check": "prettier --check \"src/**/*.ts\" \"test/**/*.ts\" \"tools/**/*.{ts,mjs,json}\""
   },
   "author": "",
   "license": "MIT",
