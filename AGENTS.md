@@ -18,7 +18,7 @@ MCP tool call -> API/cache -> SQLite upsert -> search session -> local refinemen
 
 ## Runtime and commands
 
-- Use Node.js 22 or newer. CI currently runs Node.js 24.
+- Use Node.js 24, 25, or 26. The upper bound follows the `better-sqlite3` engines range. CI currently runs Node.js 24.
 - Install exactly from the lockfile with `npm ci`.
 - Build with `npm run build`.
 - Run the compiled stdio server with `npm run start:mcp`.

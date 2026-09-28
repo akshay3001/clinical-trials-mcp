@@ -7,7 +7,7 @@ The stdio server supports MCP `2026-07-28` and legacy clients.
 
 ## Prerequisites
 
-- Node.js 24 or newer
+- Node.js 24, 25, or 26
 
 ## Installation
 
