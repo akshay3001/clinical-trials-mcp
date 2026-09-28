@@ -41,6 +41,43 @@ function parseAgeFilter(name: string, age: string | undefined) {
   return days;
 }
 
+const UPSTREAM_DATE_PATTERN = /^(\d{4})(?:-(\d{2})(?:-(\d{2}))?)?$/;
+
+/**
+ * Converts a ClinicalTrials.gov date ("2020", "2020-03", or "2020-03-15") to
+ * the first and last YYYY-MM-DD days it can describe. Returns undefined for
+ * text in any other format.
+ */
+function parseDatePeriod(date: string) {
+  const match = UPSTREAM_DATE_PATTERN.exec(date);
+  if (!match) return undefined;
+  const [, year, month, day] = match;
+  if (day) return { first: date, last: date };
+  if (month) {
+    const lastDay = new Date(Date.UTC(Number(year), Number(month), 0));
+    return { first: `${date}-01`, last: lastDay.toISOString().slice(0, 10) };
+  }
+  return { first: `${year}-01-01`, last: `${year}-12-31` };
+}
+
+/**
+ * Checks a study date against inclusive YYYY-MM-DD bounds. When a bound is
+ * set, missing or unparseable dates fail, and a partial date passes only if
+ * its whole period is inside the bounds.
+ */
+function isWithinDateBounds(
+  date: string | undefined,
+  after: string | undefined,
+  before: string | undefined,
+): boolean {
+  if (!after && !before) return true;
+  const period = date ? parseDatePeriod(date) : undefined;
+  if (!period) return false;
+  if (after && period.first < after) return false;
+  if (before && period.last > before) return false;
+  return true;
+}
+
 /**
  * Filter studies based on refinement criteria
  */
@@ -111,32 +148,34 @@ export function filterStudies(
       if (!hasCity) return false;
     }
 
-    // Filter by enrollment
-    if (filters.enrollmentMin !== undefined && enrollment !== undefined) {
-      if (enrollment < filters.enrollmentMin) return false;
+    // Enrollment bounds are inclusive. Studies without a count are excluded.
+    if (filters.enrollmentMin !== undefined) {
+      if (enrollment === undefined || enrollment < filters.enrollmentMin)
+        return false;
     }
 
-    if (filters.enrollmentMax !== undefined && enrollment !== undefined) {
-      if (enrollment > filters.enrollmentMax) return false;
+    if (filters.enrollmentMax !== undefined) {
+      if (enrollment === undefined || enrollment > filters.enrollmentMax)
+        return false;
     }
 
-    // Filter by start date
-    if (filters.startDateAfter && startDate) {
-      if (startDate < filters.startDateAfter) return false;
-    }
+    if (
+      !isWithinDateBounds(
+        startDate,
+        filters.startDateAfter,
+        filters.startDateBefore,
+      )
+    )
+      return false;
 
-    if (filters.startDateBefore && startDate) {
-      if (startDate > filters.startDateBefore) return false;
-    }
-
-    // Filter by completion date
-    if (filters.completionDateAfter && completionDate) {
-      if (completionDate < filters.completionDateAfter) return false;
-    }
-
-    if (filters.completionDateBefore && completionDate) {
-      if (completionDate > filters.completionDateBefore) return false;
-    }
+    if (
+      !isWithinDateBounds(
+        completionDate,
+        filters.completionDateAfter,
+        filters.completionDateBefore,
+      )
+    )
+      return false;
 
     // Filter by intervention type
     if (filters.interventionType) {
