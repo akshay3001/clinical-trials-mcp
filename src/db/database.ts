@@ -168,12 +168,6 @@ export class DatabaseManager {
       CREATE INDEX IF NOT EXISTS idx_studies_start_date ON studies(start_date);
       CREATE INDEX IF NOT EXISTS idx_studies_study_type ON studies(study_type);
       CREATE INDEX IF NOT EXISTS idx_studies_sponsor_class ON studies(lead_sponsor_class);
-      CREATE INDEX IF NOT EXISTS idx_studies_allocation ON studies(allocation);
-      CREATE INDEX IF NOT EXISTS idx_studies_intervention_model ON studies(intervention_model);
-      CREATE INDEX IF NOT EXISTS idx_studies_primary_purpose ON studies(primary_purpose);
-      CREATE INDEX IF NOT EXISTS idx_studies_masking ON studies(masking);
-      CREATE INDEX IF NOT EXISTS idx_studies_fda_drug ON studies(is_fda_regulated_drug);
-      CREATE INDEX IF NOT EXISTS idx_studies_fda_device ON studies(is_fda_regulated_device);
       CREATE INDEX IF NOT EXISTS idx_conditions_condition ON conditions(condition);
       CREATE INDEX IF NOT EXISTS idx_interventions_type ON interventions(intervention_type);
       CREATE INDEX IF NOT EXISTS idx_interventions_name ON interventions(intervention_name);
@@ -246,6 +240,17 @@ export class DatabaseManager {
         );
       }
     }
+
+    // These indexes depend on migrated columns, so they must be created after
+    // the columns exist in databases created by older versions.
+    this.db.exec(`
+      CREATE INDEX IF NOT EXISTS idx_studies_allocation ON studies(allocation);
+      CREATE INDEX IF NOT EXISTS idx_studies_intervention_model ON studies(intervention_model);
+      CREATE INDEX IF NOT EXISTS idx_studies_primary_purpose ON studies(primary_purpose);
+      CREATE INDEX IF NOT EXISTS idx_studies_masking ON studies(masking);
+      CREATE INDEX IF NOT EXISTS idx_studies_fda_drug ON studies(is_fda_regulated_drug);
+      CREATE INDEX IF NOT EXISTS idx_studies_fda_device ON studies(is_fda_regulated_device);
+    `);
 
     // Backfill new columns from raw_json for existing data
     this.backfillDenormalizedFields();

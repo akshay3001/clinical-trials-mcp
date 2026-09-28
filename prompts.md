@@ -259,8 +259,8 @@ Error: Session session_invalid_123 was not found.
 - `allocation` - Randomization type
 - `interventionModel` - Study design
 - `primaryPurpose` - Research intent
-- `minAge` - Minimum age
-- `maxAge` - Maximum age
+- `minAge` - Study minimum age is at least this age, compared across units ("18 Years" = "216 Months")
+- `maxAge` - Study maximum age is at most this age
 
 ### Phase 3 - Complex Filters (5 filters)
 - `ageGroups` - Age categories (array)
