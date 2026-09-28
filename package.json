@@ -20,7 +20,7 @@
     "url": "https://github.com/akshay3001/clinical-trials-mcp.git"
   },
   "engines": {
-    "node": ">=24.0.0"
+    "node": "24.x || 25.x || 26.x"
   },
   "dependencies": {
     "@modelcontextprotocol/server": "^2.0.0",
