@@ -1,6 +1,46 @@
 import { Study, FilterParams } from "../models/types.js";
 import { randomUUID } from "node:crypto";
 
+const AGE_UNIT_DAYS = {
+  year: 365.25,
+  month: 365.25 / 12,
+  week: 7,
+  day: 1,
+  hour: 1 / 24,
+  minute: 1 / 1440,
+} as const;
+
+const AGE_PATTERN = new RegExp(
+  `^(\\d+(?:\\.\\d+)?)\\s*(${Object.keys(AGE_UNIT_DAYS).join("|")})s?$`,
+  "i",
+);
+
+/**
+ * Converts a ClinicalTrials.gov age such as "18 Years" or "6 Months" to days,
+ * so ages with different units compare correctly. Returns undefined for
+ * values such as "N/A" that do not describe an age.
+ */
+export function parseAgeInDays(age: string): number | undefined {
+  const match = AGE_PATTERN.exec(age.trim());
+  if (!match) return undefined;
+  const [, value, unit] = match;
+  return (
+    Number(value) *
+    AGE_UNIT_DAYS[unit.toLowerCase() as keyof typeof AGE_UNIT_DAYS]
+  );
+}
+
+function parseAgeFilter(name: string, age: string | undefined) {
+  if (age === undefined) return undefined;
+  const days = parseAgeInDays(age);
+  if (days === undefined) {
+    throw new RangeError(
+      `${name} must be a number and unit, such as "18 Years" or "6 Months"`,
+    );
+  }
+  return days;
+}
+
 /**
  * Filter studies based on refinement criteria
  */
@@ -8,6 +48,9 @@ export function filterStudies(
   studies: Study[],
   filters: FilterParams,
 ): Study[] {
+  const minAgeDays = parseAgeFilter("minAge", filters.minAge);
+  const maxAgeDays = parseAgeFilter("maxAge", filters.maxAge);
+
   return studies.filter((study) => {
     const protocol = study.protocolSection;
 
@@ -165,20 +208,22 @@ export function filterStudies(
         return false;
     }
 
-    // Filter by minimum age
-    if (filters.minAge) {
-      const studyMinAge = protocol.eligibilityModule?.minimumAge;
-      if (!studyMinAge || studyMinAge === "N/A") return false;
-      // Simple string comparison (e.g., "18 Years" vs "21 Years")
-      if (studyMinAge < filters.minAge) return false;
+    // Keep studies whose minimum eligible age is at least minAge (inclusive).
+    // Studies without a parseable minimum age are excluded.
+    if (minAgeDays !== undefined) {
+      const studyMinDays = parseAgeInDays(
+        protocol.eligibilityModule?.minimumAge ?? "",
+      );
+      if (studyMinDays === undefined || studyMinDays < minAgeDays) return false;
     }
 
-    // Filter by maximum age
-    if (filters.maxAge) {
-      const studyMaxAge = protocol.eligibilityModule?.maximumAge;
-      if (!studyMaxAge || studyMaxAge === "N/A") return false;
-      // Simple string comparison
-      if (studyMaxAge > filters.maxAge) return false;
+    // Keep studies whose maximum eligible age is at most maxAge (inclusive).
+    // Studies without a parseable maximum age are excluded.
+    if (maxAgeDays !== undefined) {
+      const studyMaxDays = parseAgeInDays(
+        protocol.eligibilityModule?.maximumAge ?? "",
+      );
+      if (studyMaxDays === undefined || studyMaxDays > maxAgeDays) return false;
     }
 
     // Phase 3 filters

@@ -198,9 +198,12 @@ const refineResultsInputSchema = z
     primaryPurpose: primaryPurposeSchema
       .describe("Filter by primary purpose")
       .optional(),
-    minAge: boundedText('Minimum age, such as "18 Years"', 100).optional(),
+    minAge: boundedText(
+      'Keep studies whose minimum eligible age is at least this age, such as "18 Years" or "6 Months"',
+      100,
+    ).optional(),
     maxAge: boundedText(
-      'Maximum age, such as "75 Years" or "N/A"',
+      'Keep studies whose maximum eligible age is at most this age, such as "75 Years"',
       100,
     ).optional(),
     ageGroups: z

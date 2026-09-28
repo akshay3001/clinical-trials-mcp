@@ -203,25 +203,31 @@ export class ClinicalTrialsAPIClient {
     const url = `${this.baseUrl}/studies?${urlParams.toString()}`;
 
     const response = await this.fetchWithRetry(url, options);
-    const data = (await response.json()) as any;
+    const data: unknown = await response.json();
 
-    // Validate response with Zod using safeParse
     const result = SearchResponseSchema.safeParse(data);
+    if (result.success) return result.data;
 
-    if (!result.success) {
-      console.error(
-        "Search response validation failed:",
-        result.error.format(),
-      );
-      // Return partial data with empty studies array if validation fails completely
-      return {
-        studies: Array.isArray(data.studies) ? data.studies : [],
-        nextPageToken: data.nextPageToken,
-        totalCount: data.totalCount,
-      };
+    // One malformed study should not discard a whole page. Keep only the
+    // studies that parse; the final parse still rejects an invalid envelope.
+    if (
+      typeof data !== "object" ||
+      data === null ||
+      !("studies" in data) ||
+      !Array.isArray(data.studies)
+    ) {
+      throw new Error("ClinicalTrials.gov returned an invalid search response");
     }
 
-    return result.data;
+    const studies = data.studies.flatMap((study: unknown) => {
+      const parsed = StudySchema.safeParse(study);
+      return parsed.success ? [parsed.data] : [];
+    });
+    console.error(
+      `Dropped ${data.studies.length - studies.length} invalid studies from search response`,
+    );
+
+    return SearchResponseSchema.parse({ ...data, studies });
   }
 
   /**
@@ -261,8 +267,9 @@ export class ClinicalTrialsAPIClient {
           `Study ${nctId} validation failed:`,
           result.error.format(),
         );
-        // Return the raw study data even if validation fails
-        return rawStudy as Study;
+        throw new Error(
+          `ClinicalTrials.gov returned an invalid study ${nctId}`,
+        );
       }
 
       return result.data;
