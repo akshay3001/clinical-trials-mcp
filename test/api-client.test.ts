@@ -137,6 +137,41 @@ test("parses the direct Study returned by the single-study endpoint", async () =
   }
 });
 
+test("rejects invalid studies instead of returning unvalidated data", async () => {
+  const server = createServer((request, response) => {
+    response.setHeader("content-type", "application/json");
+    response.end(
+      JSON.stringify(
+        request.url?.startsWith("/studies?")
+          ? { studies: [study, {}], totalCount: 2 }
+          : { protocolSection: {} },
+      ),
+    );
+  });
+
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address();
+  assert.ok(address && typeof address !== "string");
+  const client = new ClinicalTrialsAPIClient(
+    `http://127.0.0.1:${address.port}`,
+  );
+
+  try {
+    const result = await client.search({ condition: "diabetes", pageSize: 10 });
+    assert.deepEqual(
+      result.studies.map(
+        (parsed) => parsed.protocolSection.identificationModule.nctId,
+      ),
+      ["NCT00000001"],
+    );
+    await assert.rejects(client.getStudy("NCT00000002"), /invalid study/);
+  } finally {
+    await new Promise<void>((resolve, reject) =>
+      server.close((error) => (error ? reject(error) : resolve())),
+    );
+  }
+});
+
 test("propagates caller cancellation to upstream fetch", async () => {
   const server = createServer((_request, response) => {
     setTimeout(() => {

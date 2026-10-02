@@ -23,11 +23,11 @@
     "url": "https://github.com/akshay3001/clinical-trials-mcp.git"
   },
   "engines": {
-    "node": ">=24.0.0"
+    "node": "24.x || 25.x || 26.x"
   },
   "dependencies": {
     "@modelcontextprotocol/server": "^2.0.0",
-    "better-sqlite3": "^11.7.0",
+    "better-sqlite3": "^12.11.1",
     "papaparse": "^5.4.1",
     "zod": "^4.2.0"
   },

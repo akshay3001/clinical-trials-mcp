@@ -132,6 +132,7 @@ Search for Phase 3 cardiac trials, then filter to:
 **Expected Flow:**
 - `search_trials`: condition="cardiac", phase="Phase 3"
 - `refine_results`: sessionId="...", fdaRegulated=true, masking="QUADRUPLE", allocation="RANDOMIZED", enrollmentMin=100, enrollmentMax=500
+- Studies without an enrollment count are excluded. Date bounds work the same way, and a partial date such as "2020-03" passes only if the whole month is inside the bounds.
 - `summarize_session`: sessionId="...", maxResults=5
 
 ---
@@ -259,8 +260,8 @@ Error: Session session_invalid_123 was not found.
 - `allocation` - Randomization type
 - `interventionModel` - Study design
 - `primaryPurpose` - Research intent
-- `minAge` - Minimum age
-- `maxAge` - Maximum age
+- `minAge` - Study minimum age is at least this age, compared across units ("18 Years" = "216 Months")
+- `maxAge` - Study maximum age is at most this age
 
 ### Phase 3 - Complex Filters (5 filters)
 - `ageGroups` - Age categories (array)
