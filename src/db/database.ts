@@ -223,16 +223,19 @@ export class DatabaseManager {
   }
 
   /**
-   * Replace FTS triggers from older versions, which left stale terms in the
-   * index, and rebuild the index from the studies table. Runs once per
-   * database, tracked with PRAGMA user_version.
+   * Upgrade databases from older versions: backfill the denormalized columns
+   * from raw_json, replace FTS triggers that left stale terms in the index,
+   * and rebuild the index. Runs once per database, tracked with PRAGMA
+   * user_version, because studies with legitimately null fields would
+   * otherwise be rewritten on every startup.
    */
-  private migrateFtsTriggers(): void {
+  private migrateToVersion1(): void {
     if ((this.db.pragma("user_version", { simple: true }) as number) >= 1) {
       return;
     }
 
     this.db.transaction(() => {
+      this.backfillDenormalizedFields();
       this.db.exec(`
         DROP TRIGGER IF EXISTS studies_ad;
         DROP TRIGGER IF EXISTS studies_au;
@@ -282,9 +285,7 @@ export class DatabaseManager {
       CREATE INDEX IF NOT EXISTS idx_studies_fda_device ON studies(is_fda_regulated_device);
     `);
 
-    // Backfill new columns from raw_json for existing data
-    this.backfillDenormalizedFields();
-    this.migrateFtsTriggers();
+    this.migrateToVersion1();
 
     const sessionColumns = this.db.pragma(
       "table_info(search_sessions)",

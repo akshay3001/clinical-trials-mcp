@@ -79,6 +79,15 @@ function isWithinDateBounds(
 }
 
 /**
+ * Converts human-readable phases ("Phase 1", "Not Applicable") and API enums
+ * ("PHASE1", "EARLY_PHASE1", "NA") to one comparable form.
+ */
+function normalizePhase(phase: string): string {
+  const normalized = phase.toUpperCase().replace(/[^A-Z0-9]/g, "");
+  return normalized === "NOTAPPLICABLE" ? "NA" : normalized;
+}
+
+/**
  * Filter studies based on refinement criteria
  */
 export function filterStudies(
@@ -94,21 +103,16 @@ export function filterStudies(
     // Phase filtering according to ClinicalTrials.gov API enum values:
     // NA (Not Applicable), EARLY_PHASE1 (Early Phase 1), PHASE1 (Phase 1),
     // PHASE2 (Phase 2), PHASE3 (Phase 3), PHASE4 (Phase 4)
-    if (filters && (filters as any).phase) {
-      const phaseFilter = (filters as any).phase;
+    if (filters.phase) {
+      const normalizedFilter = normalizePhase(filters.phase);
       const phases = protocol.designModule?.phases || [];
 
-      // Normalize phase filter to match API source values (case-insensitive)
-      const normalizedFilter = phaseFilter.toLowerCase();
-
-      // Check if study has the requested phase
-      const hasMatchingPhase = phases.some((p: string) => {
-        const normalizedPhase = p.toLowerCase();
-        // Handle exact match or early phase variants
-        if (normalizedFilter === "phase 1") {
-          // Accept "Phase 1" or "Early Phase 1" for Phase 1 searches
+      // A Phase 1 search also matches Early Phase 1 studies.
+      const hasMatchingPhase = phases.some((phase) => {
+        const normalizedPhase = normalizePhase(phase);
+        if (normalizedFilter === "PHASE1") {
           return (
-            normalizedPhase === "phase 1" || normalizedPhase === "early phase 1"
+            normalizedPhase === "PHASE1" || normalizedPhase === "EARLYPHASE1"
           );
         }
         return normalizedPhase === normalizedFilter;

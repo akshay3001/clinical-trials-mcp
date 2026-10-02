@@ -333,7 +333,7 @@ async function runDeterministic(
     );
 
     await check(
-      "returns MCP errors for malformed and schema-invalid upstream payloads",
+      "handles malformed and schema-invalid upstream payloads",
       async () => {
         const before = readRequests(requestLog).length;
         const malformed = await client.callTool({
@@ -347,21 +347,16 @@ async function runDeterministic(
           name: "search_trials",
           arguments: { query: "schema-invalid-search-regression", pageSize: 1 },
         });
-        assert.equal(schemaInvalidSearch.isError, true);
-        assert.match(
-          resultText(schemaInvalidSearch),
-          /failed schema validation/i,
-        );
+        // Invalid studies are dropped; the rest of the page is kept.
+        assert.notEqual(schemaInvalidSearch.isError, true);
+        assert.match(resultText(schemaInvalidSearch), /found 0 studies/i);
 
         const schemaInvalidDetail = await client.callTool({
           name: "get_trial_details",
           arguments: { nctId: "NCT00000005", includeEligibility: false },
         });
         assert.equal(schemaInvalidDetail.isError, true);
-        assert.match(
-          resultText(schemaInvalidDetail),
-          /failed schema validation/i,
-        );
+        assert.match(resultText(schemaInvalidDetail), /invalid study/i);
 
         const invalidRequests = readRequests(requestLog).slice(before);
         assert.deepEqual(

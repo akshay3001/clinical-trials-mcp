@@ -95,7 +95,7 @@ was not exercised.
 - Importing the database and cache modules creates their runtime directories, and database initialization runs schema migration/backfill logic. Avoid importing these modules in tooling that is expected to be side-effect free.
 - SQLite is the durable local store. `studies.raw_json` preserves the full upstream study while selected fields and related tables support filtering and export.
 - Study writes use an upsert keyed by `nct_id`. When adding a persisted field, update table creation, migration/backfill, the upsert insert and conflict-update clauses, parameter extraction, indexes if appropriate, and any related filters/types.
-- `schema_migrations` records one-time data migrations: use its markers instead of repeating startup backfills; FTS trigger migrations may rebuild the external-content index only when trigger definitions change.
+- `PRAGMA user_version` tracks one-time data migrations. Put backfills and FTS index rebuilds behind a version step instead of repeating them on every startup.
 - Sessions store NCT IDs, not duplicate study payloads. Refinement must not make another upstream API request.
 - Preserve SQLite WAL mode, foreign-key enforcement, cascading relationships, and FTS synchronization.
 
