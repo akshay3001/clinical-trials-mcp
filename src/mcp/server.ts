@@ -157,20 +157,28 @@ const refineResultsInputSchema = z
       .int()
       .min(0)
       .max(1_000_000_000)
-      .describe("Minimum enrollment count")
+      .describe(
+        "Minimum enrollment count (inclusive). Studies without a count are excluded.",
+      )
       .optional(),
     enrollmentMax: z
       .number()
       .int()
       .min(0)
       .max(1_000_000_000)
-      .describe("Maximum enrollment count")
+      .describe(
+        "Maximum enrollment count (inclusive). Studies without a count are excluded.",
+      )
       .optional(),
     startDateAfter: isoDateSchema
-      .describe("Start date after (YYYY-MM-DD)")
+      .describe(
+        "Earliest start date (YYYY-MM-DD, inclusive). Studies without a start date are excluded.",
+      )
       .optional(),
     startDateBefore: isoDateSchema
-      .describe("Start date before (YYYY-MM-DD)")
+      .describe(
+        "Latest start date (YYYY-MM-DD, inclusive). Studies without a start date are excluded.",
+      )
       .optional(),
     interventionType: boundedText(
       "Filter by intervention type",
@@ -198,9 +206,12 @@ const refineResultsInputSchema = z
     primaryPurpose: primaryPurposeSchema
       .describe("Filter by primary purpose")
       .optional(),
-    minAge: boundedText('Minimum age, such as "18 Years"', 100).optional(),
+    minAge: boundedText(
+      'Keep studies whose minimum eligible age is at least this age, such as "18 Years" or "6 Months"',
+      100,
+    ).optional(),
     maxAge: boundedText(
-      'Maximum age, such as "75 Years" or "N/A"',
+      'Keep studies whose maximum eligible age is at most this age, such as "75 Years"',
       100,
     ).optional(),
     ageGroups: z

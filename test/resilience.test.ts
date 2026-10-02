@@ -117,16 +117,14 @@ test("rejects malformed API payloads and honors request timeouts", async () => {
   try {
     await assert.rejects(
       client.search({ query: "malformed", pageSize: 10 }),
-      /search response failed schema validation/,
+      /invalid search response/,
     );
-    await assert.rejects(
-      client.search({ query: "malformed-study", pageSize: 10 }),
-      /search response failed schema validation/,
-    );
-    await assert.rejects(
-      client.getStudy("NCT00000015"),
-      /study response failed schema validation/,
-    );
+    const partial = await client.search({
+      query: "malformed-study",
+      pageSize: 10,
+    });
+    assert.deepEqual(partial.studies, []);
+    await assert.rejects(client.getStudy("NCT00000015"), /invalid study/);
     await assert.rejects(
       client.search({ query: "slow", pageSize: 10 }, { timeoutMs: 20 }),
       /timeout|aborted/i,
@@ -339,6 +337,7 @@ test("repairs legacy FTS triggers and rebuilds a stale external-content index", 
   const legacyDatabase = new Database(databasePath);
   const repairedStudy = study(nctId, "Rebuilt searchable title");
   legacyDatabase.exec(`
+    PRAGMA user_version = 0;
     DROP TRIGGER studies_ai;
     DROP TRIGGER studies_ad;
     DROP TRIGGER studies_au;
@@ -395,7 +394,7 @@ test("backfills nullable denormalized fields once across database reopens", () =
 
   const legacyDatabase = new Database(databasePath);
   legacyDatabase.exec(`
-    DELETE FROM schema_migrations WHERE name = 'denormalized-fields-v1';
+    PRAGMA user_version = 0;
     CREATE TABLE study_update_audit (count INTEGER NOT NULL);
     INSERT INTO study_update_audit VALUES (0);
     CREATE TRIGGER count_backfill_study_updates AFTER UPDATE ON studies BEGIN

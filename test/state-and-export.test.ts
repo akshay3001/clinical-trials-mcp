@@ -5,7 +5,7 @@ import path from "node:path";
 import test from "node:test";
 
 import Database from "better-sqlite3";
-import type { Study } from "../src/models/types.js";
+import type { FilterParams, Study } from "../src/models/types.js";
 
 const originalWorkingDirectory = process.cwd();
 const runtimeDirectory = fs.mkdtempSync(
@@ -50,11 +50,65 @@ test("uses opaque UUID session handles and preserves valid empty sessions", () =
   }
 });
 
-test("migrates active sessions created before expiry metadata existed", () => {
+test("migrates studies and sessions created by older schema versions", () => {
   const databasePath = path.join(runtimeDirectory, "legacy", "sessions.db");
   fs.mkdirSync(path.dirname(databasePath), { recursive: true });
+  const legacyStudy = {
+    protocolSection: {
+      identificationModule: { nctId: "NCT00000009", briefTitle: "Legacy" },
+      designModule: { designInfo: { allocation: "RANDOMIZED" } },
+      oversightModule: { isFdaRegulatedDrug: true },
+    },
+  };
   const legacyDatabase = new Database(databasePath);
+  // The studies table as created before the design and FDA columns existed.
   legacyDatabase.exec(`
+    CREATE TABLE studies (
+      nct_id TEXT PRIMARY KEY,
+      brief_title TEXT NOT NULL,
+      official_title TEXT,
+      acronym TEXT,
+      overall_status TEXT,
+      study_type TEXT,
+      phase TEXT,
+      enrollment_count INTEGER,
+      enrollment_type TEXT,
+      start_date TEXT,
+      start_date_type TEXT,
+      primary_completion_date TEXT,
+      completion_date TEXT,
+      last_update_posted TEXT,
+      has_results BOOLEAN DEFAULT 0,
+      brief_summary TEXT,
+      detailed_description TEXT,
+      eligibility_criteria TEXT,
+      sex TEXT,
+      minimum_age TEXT,
+      maximum_age TEXT,
+      healthy_volunteers BOOLEAN,
+      lead_sponsor_name TEXT,
+      lead_sponsor_class TEXT,
+      raw_json TEXT NOT NULL,
+      fetched_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE VIRTUAL TABLE studies_fts USING fts5(
+      nct_id UNINDEXED,
+      brief_title,
+      official_title,
+      brief_summary,
+      detailed_description,
+      content=studies,
+      content_rowid=rowid
+    );
+    CREATE TRIGGER studies_ai AFTER INSERT ON studies BEGIN
+      INSERT INTO studies_fts(rowid, nct_id, brief_title, official_title, brief_summary, detailed_description)
+      VALUES (new.rowid, new.nct_id, new.brief_title, new.official_title, new.brief_summary, new.detailed_description);
+    END;
+    -- The old update trigger left stale terms in the external content index.
+    CREATE TRIGGER studies_au AFTER UPDATE ON studies BEGIN
+      UPDATE studies_fts SET brief_title = new.brief_title WHERE rowid = new.rowid;
+    END;
     CREATE TABLE search_sessions (
       session_id TEXT PRIMARY KEY,
       search_params TEXT NOT NULL,
@@ -64,6 +118,11 @@ test("migrates active sessions created before expiry metadata existed", () => {
     INSERT INTO search_sessions (session_id, search_params)
     VALUES ('legacy-session', '{"condition":"diabetes"}');
   `);
+  legacyDatabase
+    .prepare(
+      "INSERT INTO studies (nct_id, brief_title, raw_json) VALUES (?, ?, ?)",
+    )
+    .run("NCT00000009", "Legacy", JSON.stringify(legacyStudy));
   legacyDatabase.close();
 
   const migratedDatabase = new DatabaseManager(databasePath);
@@ -72,8 +131,85 @@ test("migrates active sessions created before expiry metadata existed", () => {
     assert.ok(metadata);
     assert.deepEqual(metadata.searchParams, { condition: "diabetes" });
     assert.ok(Date.parse(metadata.expiresAt) > Date.now());
+
+    migratedDatabase.upsertStudy({
+      protocolSection: {
+        ...legacyStudy.protocolSection,
+        identificationModule: { nctId: "NCT00000009", briefTitle: "Renamed" },
+        statusModule: { overallStatus: "RECRUITING" },
+      },
+    } as Study);
+    assert.deepEqual(migratedDatabase.fullTextSearch("Legacy"), []);
+    assert.deepEqual(migratedDatabase.fullTextSearch("Renamed"), [
+      "NCT00000009",
+    ]);
   } finally {
     migratedDatabase.close();
+  }
+
+  const reopenedDatabase = new Database(databasePath, { readonly: true });
+  try {
+    assert.deepEqual(
+      reopenedDatabase
+        .prepare(
+          "SELECT allocation, is_fda_regulated_drug AS fdaDrug FROM studies WHERE nct_id = ?",
+        )
+        .get("NCT00000009"),
+      { allocation: "RANDOMIZED", fdaDrug: 1 },
+    );
+  } finally {
+    reopenedDatabase.close();
+  }
+});
+
+test("stores studies atomically and skips related rows missing required fields", () => {
+  const databasePath = path.join(runtimeDirectory, "atomic", "studies.db");
+  const database = new DatabaseManager(databasePath);
+  const nctId = "NCT00000010";
+
+  try {
+    database.upsertStudy({
+      protocolSection: {
+        identificationModule: { nctId, briefTitle: "Atomic" },
+        statusModule: { overallStatus: "RECRUITING" },
+        armsInterventionsModule: {
+          interventions: [{ type: "DRUG", name: "Aspirin" }, { type: "DRUG" }],
+        },
+        outcomesModule: { primaryOutcomes: [{ description: "No measure" }] },
+      },
+    } as Study);
+    assert.equal(
+      database.getStudy(nctId)?.protocolSection.identificationModule.briefTitle,
+      "Atomic",
+    );
+
+    // Force a failure in a related insert and check the core row rolls back.
+    assert.throws(() =>
+      database.upsertStudy({
+        protocolSection: {
+          identificationModule: { nctId: "NCT00000011", briefTitle: "Partial" },
+          statusModule: { overallStatus: "RECRUITING" },
+          conditionsModule: { conditions: [{}] },
+        },
+      } as unknown as Study),
+    );
+    assert.equal(database.getStudy("NCT00000011"), null);
+  } finally {
+    database.close();
+  }
+
+  const reopenedDatabase = new Database(databasePath, { readonly: true });
+  try {
+    assert.deepEqual(
+      reopenedDatabase
+        .prepare(
+          "SELECT intervention_type AS type, intervention_name AS name FROM interventions WHERE nct_id = ?",
+        )
+        .all(nctId),
+      [{ type: "DRUG", name: "Aspirin" }],
+    );
+  } finally {
+    reopenedDatabase.close();
   }
 });
 
@@ -134,4 +270,88 @@ test("rejects export symlink escapes and protects CSV consumers", async () => {
   } as Study;
   const destination = await exportModule.exportToCSV([study], "safe.csv");
   assert.match(fs.readFileSync(destination, "utf8"), /'=HYPERLINK/);
+});
+
+test("compares refinement age bounds numerically across units", () => {
+  const studyWithAges = (
+    nctId: string,
+    minimumAge?: string,
+    maximumAge?: string,
+  ) =>
+    ({
+      protocolSection: {
+        identificationModule: { nctId, briefTitle: nctId },
+        eligibilityModule: { minimumAge, maximumAge },
+      },
+    }) as Study;
+  const studies = [
+    studyWithAges("NCT00000001", "9 Years", "100 Years"),
+    studyWithAges("NCT00000002", "18 Years", "75 Years"),
+    studyWithAges("NCT00000003", "216 Months", "74 Years"),
+    studyWithAges("NCT00000004"),
+  ];
+  const matchingIds = (filters: { minAge?: string; maxAge?: string }) =>
+    helperModule
+      .filterStudies(studies, filters)
+      .map((study) => study.protocolSection.identificationModule.nctId);
+
+  assert.deepEqual(matchingIds({ minAge: "18 Years" }), [
+    "NCT00000002",
+    "NCT00000003",
+  ]);
+  assert.deepEqual(matchingIds({ maxAge: "75 Years" }), [
+    "NCT00000002",
+    "NCT00000003",
+  ]);
+  assert.throws(() => matchingIds({ minAge: "adult" }), /minAge/);
+});
+
+test("excludes studies with missing values when numeric or date bounds are set", () => {
+  const studyWith = (nctId: string, enrollment?: number, startDate?: string) =>
+    ({
+      protocolSection: {
+        identificationModule: { nctId, briefTitle: nctId },
+        statusModule: {
+          overallStatus: "RECRUITING",
+          startDateStruct: startDate ? { date: startDate } : undefined,
+        },
+        designModule: {
+          enrollmentInfo:
+            enrollment === undefined ? undefined : { count: enrollment },
+        },
+      },
+    }) as Study;
+  const studies = [
+    studyWith("NCT00000001", 150, "2021-05-10"),
+    studyWith("NCT00000002"),
+    studyWith("NCT00000003", 50, "2020"),
+    studyWith("NCT00000004", 100, "2020-02"),
+  ];
+  const matchingIds = (filters: FilterParams) =>
+    helperModule
+      .filterStudies(studies, filters)
+      .map((study) => study.protocolSection.identificationModule.nctId);
+
+  assert.deepEqual(matchingIds({ enrollmentMin: 100 }), [
+    "NCT00000001",
+    "NCT00000004",
+  ]);
+  assert.deepEqual(matchingIds({ enrollmentMax: 100 }), [
+    "NCT00000003",
+    "NCT00000004",
+  ]);
+  assert.deepEqual(matchingIds({ startDateAfter: "2020-01-01" }), [
+    "NCT00000001",
+    "NCT00000003",
+    "NCT00000004",
+  ]);
+  // A partial date passes only if its whole period is inside the bounds.
+  assert.deepEqual(matchingIds({ startDateAfter: "2020-02-01" }), [
+    "NCT00000001",
+    "NCT00000004",
+  ]);
+  assert.deepEqual(matchingIds({ startDateBefore: "2020-02-28" }), []);
+  assert.deepEqual(matchingIds({ startDateBefore: "2020-02-29" }), [
+    "NCT00000004",
+  ]);
 });
