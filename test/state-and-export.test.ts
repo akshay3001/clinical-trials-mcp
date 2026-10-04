@@ -552,6 +552,50 @@ test("stores location coordinates of 0", () => {
   }
 });
 
+test("stores upstream booleans as 1, 0, or NULL when missing", () => {
+  const flagStudy = (nctId: string, value?: boolean) =>
+    ({
+      hasResults: value,
+      protocolSection: {
+        identificationModule: { nctId, briefTitle: nctId },
+        statusModule: { overallStatus: "RECRUITING" },
+        eligibilityModule: { healthyVolunteers: value },
+        oversightModule: {
+          isFdaRegulatedDrug: value,
+          isFdaRegulatedDevice: value,
+        },
+      },
+    }) as Study;
+
+  const databasePath = path.join(runtimeDirectory, "booleans", "studies.db");
+  const database = new DatabaseManager(databasePath);
+  try {
+    database.upsertStudy(flagStudy("NCT00000021", true));
+    database.upsertStudy(flagStudy("NCT00000022", false));
+    database.upsertStudy(flagStudy("NCT00000023"));
+  } finally {
+    database.close();
+  }
+
+  const reopenedDatabase = new Database(databasePath, { readonly: true });
+  try {
+    const flags = reopenedDatabase
+      .prepare(
+        `SELECT has_results, healthy_volunteers, is_fda_regulated_drug,
+          is_fda_regulated_device FROM studies ORDER BY nct_id`,
+      )
+      .all()
+      .map((row) => Object.values(row as Record<string, unknown>));
+    assert.deepEqual(flags, [
+      [1, 1, 1, 1],
+      [0, 0, 0, 0],
+      [null, null, null, null],
+    ]);
+  } finally {
+    reopenedDatabase.close();
+  }
+});
+
 test("treats one false FDA flag as not regulated and both missing as unknown", () => {
   const studyWithOversight = (
     nctId: string,
