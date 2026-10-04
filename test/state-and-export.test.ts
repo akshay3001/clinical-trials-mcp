@@ -831,7 +831,7 @@ test("exports upstream JSON shapes and keeps the main CSV bytes", async () => {
     // Old stored defaults cannot be removed without guessing field presence.
     const legacy = new Database(databasePath);
     try {
-      legacy.exec("UPDATE studies SET raw_json_upstream = 0");
+      legacy.exec("UPDATE studies SET raw_json_upstream_hash = NULL");
     } finally {
       legacy.close();
     }
@@ -840,6 +840,36 @@ test("exports upstream JSON shapes and keeps the main CSV bytes", async () => {
       /Run search_trials again/,
     );
     assert.deepEqual(database.getSessionResults("upstream"), [upstream]);
+    database.upsertStudy(study);
+    assert.deepEqual(database.getSessionResults("upstream", true), [upstream]);
+
+    // A pre-upgrade upsert does not know the hash column and leaves it intact.
+    const oldWriter = new Database(databasePath);
+    const withDefaults = {
+      ...study,
+      protocolSection: {
+        ...study.protocolSection,
+        identificationModule: {
+          ...study.protocolSection.identificationModule,
+          officialTitle: "",
+        },
+      },
+    };
+    try {
+      oldWriter
+        .prepare(
+          `INSERT INTO studies (nct_id, brief_title, raw_json) VALUES (?, ?, ?)
+           ON CONFLICT(nct_id) DO UPDATE SET raw_json = excluded.raw_json`,
+        )
+        .run(nctIdOf(study), "Export shape", JSON.stringify(withDefaults));
+    } finally {
+      oldWriter.close();
+    }
+    assert.throws(
+      () => database.getSessionResults("upstream", true),
+      /Run search_trials again/,
+    );
+    assert.deepEqual(database.getSessionResults("upstream"), [withDefaults]);
     database.upsertStudy(study);
     assert.deepEqual(database.getSessionResults("upstream", true), [upstream]);
   } finally {

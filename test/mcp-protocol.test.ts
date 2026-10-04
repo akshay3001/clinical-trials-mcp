@@ -115,12 +115,15 @@ test("serves MCP 2026-07-28 over stdio with deterministic tools", async () => {
       runtimeDatabase.pragma("foreign_keys = ON");
       runtimeDatabase
         .prepare(
-          "INSERT INTO studies (nct_id, brief_title, raw_json, raw_json_upstream) VALUES (?, ?, ?, 1)",
+          "INSERT INTO studies (nct_id, brief_title, raw_json, raw_json_upstream_hash) VALUES (?, ?, ?, ?)",
         )
         .run(
           "NCT00000001",
           "Seeded protocol test study",
           JSON.stringify(seededStudy),
+          createHash("sha256")
+            .update(JSON.stringify(seededStudy))
+            .digest("hex"),
         );
       runtimeDatabase
         .prepare(

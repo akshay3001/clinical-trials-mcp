@@ -88,7 +88,7 @@ If MCP behavior changed, also launch the compiled server or exercise the relevan
 
 - CSV always contains the core columns; optional columns are defined by `AdditionalExportColumn` and `ADDITIONAL_COLUMN_EXTRACTORS`.
 - Adding a CSV column requires synchronized changes in the shared union type, extractor map, and MCP tool enum.
-- CSV serializers use the literal `BLANK` for absent values. JSON and JSONL preserve the upstream study shape from `studies.raw_json`, including missing fields, empty arrays, null, `0`, and `false`. Study schemas must not add defaults. Reject JSON/JSONL exports of legacy rows without `raw_json_upstream`; a fresh search replaces them. Use the `searchUpstream` cache namespace to exclude older responses with defaults.
+- CSV serializers use the literal `BLANK` for absent values. JSON and JSONL preserve the upstream study shape from `studies.raw_json`, including missing fields, empty arrays, null, `0`, and `false`. Study schemas must not add defaults. Reject JSON/JSONL exports of legacy rows without a matching `raw_json_upstream_hash`; a fresh search replaces them. Use the `searchUpstream` cache namespace to exclude older responses with defaults.
 - A bare output filename is organized under `exports/<format>/`; an absolute path or a path containing directories is honored as supplied.
 
 ## Change recipes
