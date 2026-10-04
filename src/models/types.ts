@@ -535,6 +535,7 @@ export interface FilterParams {
     | "OTHER";
   minAge?: string; // e.g., "18 Years", "65 Years"
   maxAge?: string;
+  patientAge?: string; // Study accepts a patient of this age, e.g., "70 Years"
   // Phase 3 filters
   ageGroups?: ("CHILD" | "ADULT" | "OLDER_ADULT")[]; // Array matching - study must include at least one
   masking?: "NONE" | "SINGLE" | "DOUBLE" | "TRIPLE" | "QUADRUPLE";

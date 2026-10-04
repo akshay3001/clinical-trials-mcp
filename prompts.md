@@ -44,21 +44,22 @@ Find randomized parallel-group trials for diabetes treatment
 
 ### 5. Primary Purpose Filter
 ```
-Search for COVID-19 prevention trials with participants aged 18-65
+Search for COVID-19 prevention trials that a 40-year-old can join
 ```
 
 **Expected Flow:**
 - `search_trials`: condition="COVID-19"
-- `refine_results`: sessionId="...", primaryPurpose="PREVENTION", minAge="18 Years", maxAge="65 Years"
+- `refine_results`: sessionId="...", primaryPurpose="PREVENTION", patientAge="40 Years"
 
-### 6. Age Range Filter
+### 6. Patient Age Filter
 ```
-Show me cancer trials for elderly patients (65+) with crossover design
+Show me cancer trials that a 70-year-old patient can join, with crossover design
 ```
 
 **Expected Flow:**
 - `search_trials`: condition="cancer"
-- `refine_results`: sessionId="...", minAge="65 Years", interventionModel="CROSSOVER"
+- `refine_results`: sessionId="...", patientAge="70 Years", interventionModel="CROSSOVER"
+- A study with no maximum age (for example "18 Years" and up) is kept. A study with no minimum age has no lower limit.
 
 ---
 
@@ -113,12 +114,12 @@ Search for diabetes trials, then narrow to:
 
 ### 11. Complex Location + Demographics
 ```
-Find cancer trials in New York for female patients aged 40-70, accepting healthy volunteers, with treatment purpose
+Find cancer trials in New York for a 55-year-old female patient, accepting healthy volunteers, with treatment purpose
 ```
 
 **Expected Flow:**
 - `search_trials`: condition="cancer", location="New York"
-- `refine_results`: sessionId="...", locationState="New York", sex="FEMALE", minAge="40 Years", maxAge="70 Years", healthyVolunteers=true, primaryPurpose="TREATMENT"
+- `refine_results`: sessionId="...", locationState="New York", sex="FEMALE", patientAge="55 Years", healthyVolunteers=true, primaryPurpose="TREATMENT"
 
 ### 12. Study Design Deep Dive
 ```
@@ -256,12 +257,13 @@ Error: Session session_invalid_123 was not found.
 - `healthyVolunteers` - Accepts healthy volunteers
 - `sponsorClass` - Sponsor type
 
-### Phase 2 - Moderate Filters (5 filters)
+### Phase 2 - Moderate Filters (6 filters)
 - `allocation` - Randomization type
 - `interventionModel` - Study design
 - `primaryPurpose` - Research intent
 - `minAge` - Study minimum age is at least this age, compared across units ("18 Years" = "216 Months")
-- `maxAge` - Study maximum age is at most this age
+- `maxAge` - Study maximum age is at most this age. Studies with no maximum age are excluded
+- `patientAge` - Study accepts a patient of this age. A missing study minimum or maximum age means no limit
 
 ### Phase 3 - Complex Filters (5 filters)
 - `ageGroups` - Age categories (array)
@@ -269,4 +271,4 @@ Error: Session session_invalid_123 was not found.
 - `fdaRegulated` - FDA regulation status
 - `keyword` - Keyword search
 
-**Total: 14 new filters + 11 existing filters = 25 total filter capabilities**
+**Total: 15 new filters + 11 existing filters = 26 total filter capabilities**

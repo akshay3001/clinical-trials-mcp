@@ -87,6 +87,7 @@ export function filterStudies(
 ): Study[] {
   const minAgeDays = parseAgeFilter("minAge", filters.minAge);
   const maxAgeDays = parseAgeFilter("maxAge", filters.maxAge);
+  const patientAgeDays = parseAgeFilter("patientAge", filters.patientAge);
 
   return studies.filter((study) => {
     const protocol = study.protocolSection;
@@ -225,6 +226,18 @@ export function filterStudies(
         protocol.eligibilityModule?.maximumAge ?? "",
       );
       if (studyMaxDays === undefined || studyMaxDays > maxAgeDays) return false;
+    }
+
+    // Keep studies that a patient of this age can join (inclusive bounds).
+    // A missing or unparseable study minimum or maximum means no limit.
+    if (patientAgeDays !== undefined) {
+      const eligibility = protocol.eligibilityModule;
+      const studyMinDays = parseAgeInDays(eligibility?.minimumAge ?? "");
+      const studyMaxDays = parseAgeInDays(eligibility?.maximumAge ?? "");
+      if (studyMinDays !== undefined && patientAgeDays < studyMinDays)
+        return false;
+      if (studyMaxDays !== undefined && patientAgeDays > studyMaxDays)
+        return false;
     }
 
     // Phase 3 filters

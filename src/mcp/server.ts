@@ -233,11 +233,15 @@ const refineResultsInputSchema = z
       .describe("Filter by primary purpose")
       .optional(),
     minAge: boundedText(
-      'Keep studies whose minimum eligible age is at least this age, such as "18 Years" or "6 Months"',
+      'Keep studies whose minimum eligible age is at least this age, such as "18 Years" or "6 Months". To find studies a patient can join, use patientAge',
       100,
     ).optional(),
     maxAge: boundedText(
-      'Keep studies whose maximum eligible age is at most this age, such as "75 Years"',
+      'Keep studies whose maximum eligible age is at most this age, such as "75 Years". Studies with no maximum age are excluded. To find studies a patient can join, use patientAge',
+      100,
+    ).optional(),
+    patientAge: boundedText(
+      'Keep studies that accept a patient of this age, such as "70 Years". A study with no minimum or maximum age has no limit on that side',
       100,
     ).optional(),
     ageGroups: z

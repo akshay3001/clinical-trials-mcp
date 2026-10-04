@@ -365,6 +365,41 @@ test("compares refinement age bounds numerically across units", () => {
   assert.throws(() => matchingIds({ minAge: "adult" }), /minAge/);
 });
 
+test("patientAge keeps studies a patient of that age can join", () => {
+  const studyWithAges = (
+    nctId: string,
+    minimumAge?: string,
+    maximumAge?: string,
+  ) =>
+    ({
+      protocolSection: {
+        identificationModule: { nctId, briefTitle: nctId },
+        eligibilityModule: { minimumAge, maximumAge },
+      },
+    }) as Study;
+  const studies = [
+    studyWithAges("NCT00000001", "18 Years"),
+    studyWithAges("NCT00000002", "18 Years", "65 Years"),
+    studyWithAges("NCT00000003", "18 Years", "780 Months"),
+    studyWithAges("NCT00000004", undefined, "17 Years"),
+    studyWithAges("NCT00000005"),
+  ];
+  const matchingIds = (patientAge: string) =>
+    helperModule
+      .filterStudies(studies, { patientAge })
+      .map((study) => study.protocolSection.identificationModule.nctId);
+
+  assert.deepEqual(matchingIds("65 Years"), [
+    "NCT00000001",
+    "NCT00000002",
+    "NCT00000003",
+    "NCT00000005",
+  ]);
+  assert.deepEqual(matchingIds("70 Years"), ["NCT00000001", "NCT00000005"]);
+  assert.deepEqual(matchingIds("10 Years"), ["NCT00000004", "NCT00000005"]);
+  assert.throws(() => matchingIds("elderly"), /patientAge/);
+});
+
 test("excludes studies with missing values when numeric or date bounds are set", () => {
   const studyWith = (nctId: string, enrollment?: number, startDate?: string) =>
     ({
