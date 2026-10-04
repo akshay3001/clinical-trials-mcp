@@ -69,9 +69,9 @@ export class ClinicalTrialsAPIClient {
       urlParams.set("query.term", query);
     }
 
-    // Status must be uppercase (e.g., RECRUITING, COMPLETED)
+    // The API takes a comma-separated list of status enum values.
     if (params.status) {
-      urlParams.set("filter.overallStatus", params.status.toUpperCase());
+      urlParams.set("filter.overallStatus", params.status.join(","));
     }
 
     urlParams.set(

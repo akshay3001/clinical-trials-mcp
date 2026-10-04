@@ -69,7 +69,7 @@ If MCP behavior changed, also launch the compiled server or exercise the relevan
 
 - Use `https://clinicaltrials.gov/api/v2` through `ClinicalTrialsAPIClient`; do not scatter direct API calls across MCP handlers.
 - Build specialized searches with the API's `AREA[...]` syntax. Put each query part in parentheses, for example `AREA[ConditionSearch](x)`, and combine the parts with `AND`. Essie binds `AND` tighter than `OR`, so an ungrouped part changes the meaning of the query.
-- Uppercase overall-status values before sending `filter.overallStatus`.
+- Send `filter.overallStatus` as a comma-separated list of API status enum values. Take status input as a list of those values, because a display label such as "Active, not recruiting" contains a comma.
 - API pages are limited to 1,000 studies. Preserve `pageToken` pagination and the distinction between a single page and `fetchAll`.
 - The API client retries failed requests up to three attempts with exponential delays.
 - A search checks the cache before the API, saves raw API responses, writes the returned studies, and then creates a session. A fresh API response upserts every study. A cache hit only inserts studies that are missing (`insertStudyIfMissing`), because a cached response can be older than a stored study; never upsert a stored study from the cache. Changes to search parameters must also account for cache-key identity and persisted session parameters.

@@ -199,7 +199,7 @@ Find all Phase 3 pembrolizumab trials sponsored by Merck, filter to recruiting t
 ```
 
 **Expected Flow:**
-- `search_trials`: intervention="pembrolizumab", phase=["PHASE3"], sponsorSearch="Merck"
+- `search_trials`: intervention="pembrolizumab", phase=["PHASE3"], sponsorSearch="Merck", status=["RECRUITING"]
 - `refine_results`: sessionId="...", sponsorClass="INDUSTRY", hasResults=true
 - `export_results`: sessionId="...", format="json", outputPath="merck_pembrolizumab.json"
 

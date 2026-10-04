@@ -192,6 +192,37 @@ test("groups each query part so OR stays inside its own part", async () => {
   }
 });
 
+test("sends status as a comma-separated list of enum values", async () => {
+  let overallStatus: string | null = null;
+  const server = createServer((request, response) => {
+    overallStatus = new URL(
+      request.url ?? "/",
+      "http://127.0.0.1",
+    ).searchParams.get("filter.overallStatus");
+    response.setHeader("content-type", "application/json");
+    response.end(JSON.stringify({ studies: [], totalCount: 0 }));
+  });
+
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address();
+  assert.ok(address && typeof address !== "string");
+  const client = new ClinicalTrialsAPIClient(
+    `http://127.0.0.1:${address.port}`,
+  );
+
+  try {
+    await client.search({
+      status: ["ACTIVE_NOT_RECRUITING", "NOT_YET_RECRUITING"],
+      pageSize: 10,
+    });
+    assert.equal(overallStatus, "ACTIVE_NOT_RECRUITING,NOT_YET_RECRUITING");
+  } finally {
+    await new Promise<void>((resolve, reject) =>
+      server.close((error) => (error ? reject(error) : resolve())),
+    );
+  }
+});
+
 test("parses the direct Study returned by the single-study endpoint", async () => {
   const server = createServer((_request, response) => {
     response.setHeader("content-type", "application/json");
