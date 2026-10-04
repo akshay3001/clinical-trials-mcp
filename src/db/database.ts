@@ -548,8 +548,8 @@ export class DatabaseManager {
           location.state || null,
           location.country || null,
           location.status || null,
-          location.geoPoint?.lat || null,
-          location.geoPoint?.lon || null,
+          location.geoPoint?.lat ?? null,
+          location.geoPoint?.lon ?? null,
         );
       }
     }
