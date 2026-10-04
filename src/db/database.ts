@@ -346,13 +346,10 @@ export class DatabaseManager {
    * database in one transaction, tracked with PRAGMA user_version.
    */
   private backfillDenormalizedFields(): void {
-    if ((this.db.pragma("user_version", { simple: true }) as number) >= 2) {
-      return;
-    }
-
-    const rows = this.db
-      .prepare("SELECT nct_id, raw_json FROM studies")
-      .all() as Array<{ nct_id: string; raw_json: string }>;
+    const isDone = () =>
+      (this.db.pragma("user_version", { simple: true }) as number) >= 2;
+    // Skip the write lock on every start after the first.
+    if (isDone()) return;
 
     const updateStmt = this.db.prepare(`
       UPDATE studies 
@@ -377,36 +374,51 @@ export class DatabaseManager {
           OR age_groups IS NOT @ageGroups)
     `);
 
-    this.db.transaction(() => {
-      for (const row of rows) {
-        try {
-          const study = JSON.parse(row.raw_json) as Study;
-          const protocol = study.protocolSection;
-          const design = protocol.designModule;
-          const eligibility = protocol.eligibilityModule;
-          const oversight = protocol.oversightModule;
+    // IMMEDIATE takes the write lock before the second check and the read, so
+    // another process cannot store newer data between the read and the
+    // update, and only one process runs the backfill.
+    this.db
+      .transaction(() => {
+        if (isDone()) return;
 
-          updateStmt.run({
-            nctId: row.nct_id,
-            allocation: design?.designInfo?.allocation || null,
-            interventionModel: design?.designInfo?.interventionModel || null,
-            primaryPurpose: design?.designInfo?.primaryPurpose || null,
-            masking: design?.designInfo?.maskingInfo?.masking || null,
-            hasResults: toSqliteBoolean(study.hasResults),
-            healthyVolunteers: toSqliteBoolean(eligibility?.healthyVolunteers),
-            isFdaRegulatedDrug: toSqliteBoolean(oversight?.isFdaRegulatedDrug),
-            isFdaRegulatedDevice: toSqliteBoolean(
-              oversight?.isFdaRegulatedDevice,
-            ),
-            ageGroups: eligibility?.stdAges?.join(",") || null,
-          });
-        } catch (error) {
-          // Skip studies with invalid JSON
-          console.error(`Failed to backfill study ${row.nct_id}:`, error);
+        const rows = this.db
+          .prepare("SELECT nct_id, raw_json FROM studies")
+          .all() as Array<{ nct_id: string; raw_json: string }>;
+
+        for (const row of rows) {
+          try {
+            const study = JSON.parse(row.raw_json) as Study;
+            const protocol = study.protocolSection;
+            const design = protocol.designModule;
+            const eligibility = protocol.eligibilityModule;
+            const oversight = protocol.oversightModule;
+
+            updateStmt.run({
+              nctId: row.nct_id,
+              allocation: design?.designInfo?.allocation || null,
+              interventionModel: design?.designInfo?.interventionModel || null,
+              primaryPurpose: design?.designInfo?.primaryPurpose || null,
+              masking: design?.designInfo?.maskingInfo?.masking || null,
+              hasResults: toSqliteBoolean(study.hasResults),
+              healthyVolunteers: toSqliteBoolean(
+                eligibility?.healthyVolunteers,
+              ),
+              isFdaRegulatedDrug: toSqliteBoolean(
+                oversight?.isFdaRegulatedDrug,
+              ),
+              isFdaRegulatedDevice: toSqliteBoolean(
+                oversight?.isFdaRegulatedDevice,
+              ),
+              ageGroups: eligibility?.stdAges?.join(",") || null,
+            });
+          } catch (error) {
+            // Skip studies with invalid JSON
+            console.error(`Failed to backfill study ${row.nct_id}:`, error);
+          }
         }
-      }
-      this.db.pragma("user_version = 2");
-    })();
+        this.db.pragma("user_version = 2");
+      })
+      .immediate();
   }
 
   /**
