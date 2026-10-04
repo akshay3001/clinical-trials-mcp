@@ -216,9 +216,87 @@ test("migrates studies and sessions created by older schema versions", () => {
         .get("NCT00000009"),
       { allocation: "RANDOMIZED", fdaDrug: 1 },
     );
+    assert.equal(reopenedDatabase.pragma("user_version", { simple: true }), 2);
   } finally {
     reopenedDatabase.close();
   }
+});
+
+test("repairs stored flags from raw_json once, then skips the backfill", () => {
+  const databasePath = path.join(runtimeDirectory, "backfill", "studies.db");
+  const studyWith = (nctId: string, extra: object) =>
+    ({
+      protocolSection: {
+        identificationModule: { nctId, briefTitle: nctId },
+        statusModule: { overallStatus: "COMPLETED" },
+        ...extra,
+      },
+    }) as Study;
+  const database = new DatabaseManager(databasePath);
+  database.upsertStudy(
+    studyWith("NCT00000001", { designModule: { studyType: "OBSERVATIONAL" } }),
+  );
+  database.upsertStudy(
+    studyWith("NCT00000002", {
+      oversightModule: { isFdaRegulatedDrug: false },
+    }),
+  );
+  database.close();
+
+  // Simulate a database from before this repair: version 1, and 0 stored for
+  // every flag, including the ones missing upstream.
+  const legacyDatabase = new Database(databasePath);
+  legacyDatabase.exec(`
+    UPDATE studies SET has_results = 0, healthy_volunteers = 0,
+      is_fda_regulated_drug = 0, is_fda_regulated_device = 0;
+    PRAGMA user_version = 1;
+    CREATE TABLE backfilled (nct_id TEXT);
+    CREATE TRIGGER count_backfill AFTER UPDATE ON studies BEGIN
+      INSERT INTO backfilled VALUES (new.nct_id);
+    END;
+  `);
+  legacyDatabase.close();
+
+  const readBack = () => {
+    const reader = new Database(databasePath, { readonly: true });
+    try {
+      return {
+        version: reader.pragma("user_version", { simple: true }),
+        backfilled: reader
+          .prepare("SELECT COUNT(*) AS n FROM backfilled")
+          .get(),
+        flags: reader
+          .prepare(
+            `SELECT nct_id AS nctId, has_results AS hasResults,
+              healthy_volunteers AS healthyVolunteers,
+              is_fda_regulated_drug AS fdaDrug,
+              is_fda_regulated_device AS fdaDevice
+            FROM studies ORDER BY nct_id`,
+          )
+          .all(),
+      };
+    } finally {
+      reader.close();
+    }
+  };
+
+  new DatabaseManager(databasePath).close();
+  const missing = {
+    hasResults: null,
+    healthyVolunteers: null,
+    fdaDevice: null,
+  };
+  assert.deepEqual(readBack(), {
+    version: 2,
+    backfilled: { n: 2 },
+    flags: [
+      { nctId: "NCT00000001", ...missing, fdaDrug: null },
+      { nctId: "NCT00000002", ...missing, fdaDrug: 0 },
+    ],
+  });
+
+  new DatabaseManager(databasePath).close();
+  assert.deepEqual(readBack().backfilled, { n: 2 });
 });
 
 test("stores studies atomically and skips related rows missing required fields", () => {

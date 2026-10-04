@@ -299,9 +299,10 @@ export class DatabaseManager {
       CREATE INDEX IF NOT EXISTS idx_studies_fda_device ON studies(is_fda_regulated_device);
     `);
 
-    // Backfill new columns from raw_json for existing data
-    this.backfillDenormalizedFields();
+    // The FTS migration must run first: both are gated on user_version, and
+    // the backfill sets a higher version.
     this.migrateFtsTriggers();
+    this.backfillDenormalizedFields();
 
     const sessionColumns = this.db.pragma(
       "table_info(search_sessions)",
@@ -339,15 +340,19 @@ export class DatabaseManager {
   }
 
   /**
-   * Backfill denormalized fields from raw_json
+   * Rewrite the denormalized design and boolean columns of every stored study
+   * from raw_json. Older versions stored 0 for a missing flag; this sets it to
+   * NULL. New writes set these columns in writeStudy, so this runs once per
+   * database in one transaction, tracked with PRAGMA user_version.
    */
   private backfillDenormalizedFields(): void {
-    const stmt = this.db.prepare(
-      "SELECT nct_id, raw_json FROM studies WHERE allocation IS NULL OR is_fda_regulated_drug IS NULL",
-    );
-    const rows = stmt.all() as Array<{ nct_id: string; raw_json: string }>;
+    if ((this.db.pragma("user_version", { simple: true }) as number) >= 2) {
+      return;
+    }
 
-    if (rows.length === 0) return;
+    const rows = this.db
+      .prepare("SELECT nct_id, raw_json FROM studies")
+      .all() as Array<{ nct_id: string; raw_json: string }>;
 
     const updateStmt = this.db.prepare(`
       UPDATE studies 
@@ -355,37 +360,53 @@ export class DatabaseManager {
           intervention_model = @interventionModel,
           primary_purpose = @primaryPurpose,
           masking = @masking,
+          has_results = @hasResults,
+          healthy_volunteers = @healthyVolunteers,
           is_fda_regulated_drug = @isFdaRegulatedDrug,
           is_fda_regulated_device = @isFdaRegulatedDevice,
           age_groups = @ageGroups
       WHERE nct_id = @nctId
+        AND (allocation IS NOT @allocation
+          OR intervention_model IS NOT @interventionModel
+          OR primary_purpose IS NOT @primaryPurpose
+          OR masking IS NOT @masking
+          OR has_results IS NOT @hasResults
+          OR healthy_volunteers IS NOT @healthyVolunteers
+          OR is_fda_regulated_drug IS NOT @isFdaRegulatedDrug
+          OR is_fda_regulated_device IS NOT @isFdaRegulatedDevice
+          OR age_groups IS NOT @ageGroups)
     `);
 
-    for (const row of rows) {
-      try {
-        const study = JSON.parse(row.raw_json) as Study;
-        const protocol = study.protocolSection;
-        const design = protocol.designModule;
-        const eligibility = protocol.eligibilityModule;
-        const oversight = protocol.oversightModule;
+    this.db.transaction(() => {
+      for (const row of rows) {
+        try {
+          const study = JSON.parse(row.raw_json) as Study;
+          const protocol = study.protocolSection;
+          const design = protocol.designModule;
+          const eligibility = protocol.eligibilityModule;
+          const oversight = protocol.oversightModule;
 
-        updateStmt.run({
-          nctId: row.nct_id,
-          allocation: design?.designInfo?.allocation || null,
-          interventionModel: design?.designInfo?.interventionModel || null,
-          primaryPurpose: design?.designInfo?.primaryPurpose || null,
-          masking: design?.designInfo?.maskingInfo?.masking || null,
-          isFdaRegulatedDrug: toSqliteBoolean(oversight?.isFdaRegulatedDrug),
-          isFdaRegulatedDevice: toSqliteBoolean(
-            oversight?.isFdaRegulatedDevice,
-          ),
-          ageGroups: eligibility?.stdAges?.join(",") || null,
-        });
-      } catch (error) {
-        // Skip studies with invalid JSON
-        console.error(`Failed to backfill study ${row.nct_id}:`, error);
+          updateStmt.run({
+            nctId: row.nct_id,
+            allocation: design?.designInfo?.allocation || null,
+            interventionModel: design?.designInfo?.interventionModel || null,
+            primaryPurpose: design?.designInfo?.primaryPurpose || null,
+            masking: design?.designInfo?.maskingInfo?.masking || null,
+            hasResults: toSqliteBoolean(study.hasResults),
+            healthyVolunteers: toSqliteBoolean(eligibility?.healthyVolunteers),
+            isFdaRegulatedDrug: toSqliteBoolean(oversight?.isFdaRegulatedDrug),
+            isFdaRegulatedDevice: toSqliteBoolean(
+              oversight?.isFdaRegulatedDevice,
+            ),
+            ageGroups: eligibility?.stdAges?.join(",") || null,
+          });
+        } catch (error) {
+          // Skip studies with invalid JSON
+          console.error(`Failed to backfill study ${row.nct_id}:`, error);
+        }
       }
-    }
+      this.db.pragma("user_version = 2");
+    })();
   }
 
   /**
