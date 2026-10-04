@@ -253,6 +253,31 @@ test("rejects invalid studies instead of returning unvalidated data", async () =
   }
 });
 
+test("rejects a search body without studies instead of returning zero results", async () => {
+  const server = createServer((_request, response) => {
+    response.setHeader("content-type", "application/json");
+    response.end(JSON.stringify({ message: "temporarily unavailable" }));
+  });
+
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address();
+  assert.ok(address && typeof address !== "string");
+  const client = new ClinicalTrialsAPIClient(
+    `http://127.0.0.1:${address.port}`,
+  );
+
+  try {
+    await assert.rejects(
+      client.search({ condition: "diabetes", pageSize: 10 }),
+      /invalid search response/,
+    );
+  } finally {
+    await new Promise<void>((resolve, reject) =>
+      server.close((error) => (error ? reject(error) : resolve())),
+    );
+  }
+});
+
 test("propagates caller cancellation to upstream fetch", async () => {
   const server = createServer((_request, response) => {
     setTimeout(() => {

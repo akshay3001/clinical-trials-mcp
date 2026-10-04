@@ -433,22 +433,17 @@ export const StudySchema = z
 
 export type Study = z.infer<typeof StudySchema>;
 
-// Define SearchResponse type explicitly
-export interface SearchResponse {
-  studies: Study[];
-  nextPageToken?: string;
-  totalCount?: number;
-  [key: string]: any;
-}
-
-// Search response schema
-export const SearchResponseSchema: z.ZodSchema<SearchResponse> = z
+// Search response schema. The API always sends `studies`, also for zero
+// results, so a body without it (for example an error message) is invalid.
+export const SearchResponseSchema = z
   .object({
-    studies: z.array(StudySchema).default([]),
+    studies: z.array(StudySchema),
     nextPageToken: z.string().optional(),
     totalCount: z.number().optional(),
   })
-  .passthrough() as any;
+  .passthrough();
+
+export type SearchResponse = z.infer<typeof SearchResponseSchema>;
 
 // Session for iterative refinement
 export interface SearchSession {
