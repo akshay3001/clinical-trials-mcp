@@ -442,7 +442,18 @@ export function createServer(): McpServer {
         const cacheParams = fetchAll
           ? { ...searchParams, fetchAll, fetchLimit }
           : searchParams;
-        const cachedResponse = cache.get<SearchResponse>("search", cacheParams);
+        const cached = cache.get<SearchResponse>("search", cacheParams);
+        // An entry cached before searchAll removed repeated NCT IDs can hold
+        // fewer unique studies than fetchLimit, so it is fetched again.
+        const cachedResponse =
+          cached &&
+          new Set(
+            cached.studies.map(
+              (study) => study.protocolSection.identificationModule.nctId,
+            ),
+          ).size === cached.studies.length
+            ? cached
+            : undefined;
 
         let studies: Study[];
         // A fresh API response is cached only after its session is created,
@@ -496,8 +507,8 @@ export function createServer(): McpServer {
         ctx.mcpReq.signal.throwIfAborted();
 
         const sessionId = generateSessionId();
-        // searchAll already removes duplicates. This also covers a single
-        // page and cache entries written before that fix.
+        // searchAll removes IDs repeated across pages. This also covers a
+        // repeated ID within a single page.
         const nctIds = [
           ...new Set(
             studies.map(
