@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -172,6 +173,85 @@ test("serves MCP 2026-07-28 over stdio with deterministic tools", async () => {
       ),
       true,
     );
+  });
+});
+
+test("a cache hit keeps newer stored studies and adds missing ones", async () => {
+  await withStdioClient("modern", async (client, runtimeDirectory) => {
+    const studyFixture = (
+      nctId: string,
+      title: string,
+      lastUpdate: string,
+    ) => ({
+      protocolSection: {
+        identificationModule: { nctId, briefTitle: title },
+        statusModule: {
+          overallStatus: "RECRUITING",
+          lastUpdatePostDateStruct: { date: lastUpdate },
+        },
+      },
+    });
+    const newer = studyFixture(
+      "NCT00000002",
+      "Newer stored title",
+      "2026-10-04",
+    );
+
+    const runtimeDatabase = new Database(
+      path.join(runtimeDirectory, "data", "clinical-trials.db"),
+    );
+    try {
+      runtimeDatabase
+        .prepare(
+          "INSERT INTO studies (nct_id, brief_title, raw_json) VALUES (?, ?, ?)",
+        )
+        .run("NCT00000002", "Newer stored title", JSON.stringify(newer));
+    } finally {
+      runtimeDatabase.close();
+    }
+
+    // Write the disk entry that search_trials reads for { query: "rollback" }.
+    // The schema adds the default pageSize, and keys are sorted.
+    const params = { pageSize: 1000, query: "rollback" };
+    const hash = createHash("sha256")
+      .update(JSON.stringify(params))
+      .digest("hex");
+    fs.writeFileSync(
+      path.join(runtimeDirectory, "cache", `search:${hash}.json`),
+      JSON.stringify({
+        params,
+        timestamp: Date.now(),
+        data: {
+          studies: [
+            studyFixture("NCT00000002", "Old cached title", "2020-01-01"),
+            studyFixture("NCT00000003", "Cached only title", "2020-01-01"),
+          ],
+          totalCount: 2,
+        },
+      }),
+    );
+
+    const search = await client.callTool({
+      name: "search_trials",
+      arguments: { query: "rollback" },
+    });
+    assert.notEqual(search.isError, true);
+    const sessionId = JSON.stringify(search.content).match(
+      /\*\*Session ID:\*\* ([0-9a-f-]{36})/,
+    )?.[1];
+    assert.ok(sessionId);
+
+    const summary = JSON.stringify(
+      (
+        await client.callTool({
+          name: "summarize_session",
+          arguments: { sessionId, maxResults: 2 },
+        })
+      ).content,
+    );
+    assert.match(summary, /Newer stored title/);
+    assert.match(summary, /Cached only title/);
+    assert.doesNotMatch(summary, /Old cached title/);
   });
 });
 

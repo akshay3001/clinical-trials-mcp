@@ -373,6 +373,22 @@ export class DatabaseManager {
     this.db.transaction(() => this.writeStudy(study))();
   }
 
+  /**
+   * Insert a study and its related rows only if it is not stored yet. An
+   * IMMEDIATE transaction takes the write lock before the check, so another
+   * process cannot store a newer copy between the check and the write.
+   */
+  insertStudyIfMissing(study: Study): void {
+    this.db
+      .transaction(() => {
+        const stored = this.db
+          .prepare("SELECT 1 FROM studies WHERE nct_id = ?")
+          .get(study.protocolSection.identificationModule.nctId);
+        if (!stored) this.writeStudy(study);
+      })
+      .immediate();
+  }
+
   private writeStudy(study: Study): void {
     const protocol = study.protocolSection;
     const identification = protocol.identificationModule;
