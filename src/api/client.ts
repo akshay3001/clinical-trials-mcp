@@ -52,8 +52,7 @@ export class ClinicalTrialsAPIClient {
       params.intervention && `AREA[InterventionSearch](${params.intervention})`,
       params.sponsorSearch && `AREA[SponsorSearch](${params.sponsorSearch})`,
       params.location && `AREA[LocationSearch](${params.location})`,
-      // Phase is included as a regular search term (not an AREA)
-      params.phase && `(${params.phase})`,
+      params.phase && `AREA[Phase](${params.phase.join(" OR ")})`,
     ]
       .filter(Boolean)
       .join(" AND ");
