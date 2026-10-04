@@ -469,7 +469,8 @@ export function createServer(): McpServer {
         const cacheParams = fetchAll
           ? { ...searchParams, fetchAll, fetchLimit }
           : searchParams;
-        const cached = cache.get<SearchResponse>("search", cacheParams);
+        // Older search cache entries contain study defaults added by Zod.
+        const cached = cache.get<SearchResponse>("searchUpstream", cacheParams);
         // An entry cached before searchAll removed repeated NCT IDs can hold
         // fewer unique studies than fetchLimit, so it is fetched again.
         const cachedResponse =
@@ -547,7 +548,8 @@ export function createServer(): McpServer {
           ),
         ];
         db.createSession(sessionId, searchParams, nctIds);
-        if (freshResponse) cache.set("search", cacheParams, freshResponse);
+        if (freshResponse)
+          cache.set("searchUpstream", cacheParams, freshResponse);
 
         // A single-page search keeps nextPageToken, so the user can see that
         // the session holds only the first page.
@@ -673,12 +675,13 @@ export function createServer(): McpServer {
     "export_results",
     {
       title: "Export Search Results",
-      description: "Export a search session to a CSV, JSON, or JSONL file.",
+      description:
+        "Export a search session to CSV, JSON, or JSONL. CSV uses BLANK for absent values. JSON and JSONL preserve the stored upstream study shape. For studies stored by older versions, run search_trials again first.",
       inputSchema: exportResultsInputSchema,
     },
     async ({ sessionId, format, outputPath, additionalColumns }) => {
       try {
-        const studies = db.getSessionResults(sessionId);
+        const studies = db.getSessionResults(sessionId, format !== "csv");
         if (studies.length === 0) return sessionNotFoundOrEmpty(sessionId);
 
         let finalPath: string;

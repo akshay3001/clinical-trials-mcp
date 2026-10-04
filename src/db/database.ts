@@ -97,6 +97,7 @@ export class DatabaseManager {
         is_fda_regulated_device BOOLEAN,
         age_groups TEXT,
         raw_json TEXT NOT NULL,
+        raw_json_upstream BOOLEAN NOT NULL DEFAULT 0,
         fetched_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
@@ -278,6 +279,7 @@ export class DatabaseManager {
       { name: "is_fda_regulated_drug", type: "BOOLEAN" },
       { name: "is_fda_regulated_device", type: "BOOLEAN" },
       { name: "age_groups", type: "TEXT" },
+      { name: "raw_json_upstream", type: "BOOLEAN NOT NULL DEFAULT 0" },
     ];
 
     for (const column of newColumns) {
@@ -475,7 +477,7 @@ export class DatabaseManager {
         lead_sponsor_name, lead_sponsor_class,
         allocation, intervention_model, primary_purpose, masking,
         is_fda_regulated_drug, is_fda_regulated_device, age_groups,
-        raw_json, updated_at
+        raw_json, raw_json_upstream, updated_at
       ) VALUES (
         @nctId, @briefTitle, @officialTitle, @acronym,
         @overallStatus, @studyType, @phase,
@@ -488,7 +490,7 @@ export class DatabaseManager {
         @leadSponsorName, @leadSponsorClass,
         @allocation, @interventionModel, @primaryPurpose, @masking,
         @isFdaRegulatedDrug, @isFdaRegulatedDevice, @ageGroups,
-        @rawJson, CURRENT_TIMESTAMP
+        @rawJson, 1, CURRENT_TIMESTAMP
       ) ON CONFLICT(nct_id) DO UPDATE SET
         brief_title = @briefTitle,
         official_title = @officialTitle,
@@ -521,6 +523,7 @@ export class DatabaseManager {
         is_fda_regulated_device = @isFdaRegulatedDevice,
         age_groups = @ageGroups,
         raw_json = @rawJson,
+        raw_json_upstream = 1,
         updated_at = CURRENT_TIMESTAMP
     `);
 
@@ -789,21 +792,30 @@ export class DatabaseManager {
   /**
    * Get session results in the stored order (API relevance order).
    */
-  getSessionResults(sessionId: string): Study[] {
+  getSessionResults(sessionId: string, requireUpstreamShape = false): Study[] {
     if (!this.touchSession(sessionId)) {
       return [];
     }
 
     // Get studies
     const stmt = this.db.prepare(`
-      SELECT s.raw_json 
+      SELECT s.raw_json, s.raw_json_upstream
       FROM studies s
       INNER JOIN session_results sr ON s.nct_id = sr.nct_id
       WHERE sr.session_id = ?
       ORDER BY sr.position
     `);
 
-    const rows = stmt.all(sessionId) as { raw_json: string }[];
+    const rows = stmt.all(sessionId) as {
+      raw_json: string;
+      raw_json_upstream: number;
+    }[];
+    // Old rows contain Zod defaults. Their original field presence is unknown.
+    if (requireUpstreamShape && rows.some((row) => !row.raw_json_upstream)) {
+      throw new Error(
+        "Stored studies contain legacy defaults. Run search_trials again before exporting JSON or JSONL.",
+      );
+    }
     return rows.map((row) => JSON.parse(row.raw_json));
   }
 

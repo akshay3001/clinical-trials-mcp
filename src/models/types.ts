@@ -48,6 +48,7 @@ export const SearchParamsSchema = z.object({
 
 export type SearchParams = z.infer<typeof SearchParamsSchema>;
 
+// Study schemas validate without defaults so raw_json keeps upstream field presence.
 // Study protocol section schemas
 export const IdentificationModuleSchema = z
   .object({
@@ -59,8 +60,8 @@ export const IdentificationModuleSchema = z
       .passthrough()
       .optional(),
     briefTitle: z.string(),
-    officialTitle: z.string().optional().default(""),
-    acronym: z.string().optional().default(""),
+    officialTitle: z.string().optional(),
+    acronym: z.string().optional(),
     secondaryIdInfos: z
       .array(
         z
@@ -72,9 +73,8 @@ export const IdentificationModuleSchema = z
           })
           .passthrough(),
       )
-      .optional()
-      .default([]),
-    nctIdAliases: z.array(z.string()).optional().default([]),
+      .optional(),
+    nctIdAliases: z.array(z.string()).optional(),
     organization: z
       .object({
         fullName: z.string().optional(),
@@ -139,22 +139,22 @@ export const StatusModuleSchema = z
 
 export const DescriptionModuleSchema = z
   .object({
-    briefSummary: z.string().optional().default(""),
-    detailedDescription: z.string().optional().default(""),
+    briefSummary: z.string().optional(),
+    detailedDescription: z.string().optional(),
   })
   .passthrough();
 
 export const ConditionsModuleSchema = z
   .object({
-    conditions: z.array(z.string()).optional().default([]),
-    keywords: z.array(z.string()).optional().default([]),
+    conditions: z.array(z.string()).optional(),
+    keywords: z.array(z.string()).optional(),
   })
   .passthrough();
 
 export const DesignModuleSchema = z
   .object({
-    studyType: z.string().optional().default(""),
-    phases: z.array(z.string()).optional().default([]),
+    studyType: z.string().optional(),
+    phases: z.array(z.string()).optional(),
     patientRegistry: z.boolean().optional(),
     targetDuration: z.string().optional(),
     designInfo: z
@@ -165,7 +165,7 @@ export const DesignModuleSchema = z
         maskingInfo: z
           .object({
             masking: z.string().optional(),
-            whoMasked: z.array(z.string()).optional().default([]),
+            whoMasked: z.array(z.string()).optional(),
           })
           .passthrough()
           .optional(),
@@ -191,12 +191,11 @@ export const ArmsInterventionsModuleSchema = z
             label: z.string().optional(),
             type: z.string().optional(),
             description: z.string().optional(),
-            interventionNames: z.array(z.string()).optional().default([]),
+            interventionNames: z.array(z.string()).optional(),
           })
           .passthrough(),
       )
-      .optional()
-      .default([]),
+      .optional(),
     interventions: z
       .array(
         z
@@ -204,13 +203,12 @@ export const ArmsInterventionsModuleSchema = z
             type: z.string().optional(),
             name: z.string().optional(),
             description: z.string().optional(),
-            armGroupLabels: z.array(z.string()).optional().default([]),
-            otherNames: z.array(z.string()).optional().default([]),
+            armGroupLabels: z.array(z.string()).optional(),
+            otherNames: z.array(z.string()).optional(),
           })
           .passthrough(),
       )
-      .optional()
-      .default([]),
+      .optional(),
   })
   .passthrough();
 
@@ -223,7 +221,7 @@ export const EligibilityModuleSchema = z
     genderDescription: z.string().optional(),
     minimumAge: z.string().optional(),
     maximumAge: z.string().optional(),
-    stdAges: z.array(z.string()).optional().default([]),
+    stdAges: z.array(z.string()).optional(),
     studyPopulation: z.string().optional(),
     samplingMethod: z.string().optional(),
   })
@@ -242,8 +240,7 @@ export const ContactsLocationsModuleSchema = z
           })
           .passthrough(),
       )
-      .optional()
-      .default([]),
+      .optional(),
     locations: z
       .array(
         z
@@ -272,13 +269,11 @@ export const ContactsLocationsModuleSchema = z
                   })
                   .passthrough(),
               )
-              .optional()
-              .default([]),
+              .optional(),
           })
           .passthrough(),
       )
-      .optional()
-      .default([]),
+      .optional(),
   })
   .passthrough();
 
@@ -300,8 +295,7 @@ export const SponsorCollaboratorsModuleSchema = z
           })
           .passthrough(),
       )
-      .optional()
-      .default([]),
+      .optional(),
     responsibleParty: z
       .object({
         type: z.string().optional(),
@@ -326,8 +320,7 @@ export const OutcomesModuleSchema = z
           })
           .passthrough(),
       )
-      .optional()
-      .default([]),
+      .optional(),
     secondaryOutcomes: z
       .array(
         z
@@ -338,8 +331,7 @@ export const OutcomesModuleSchema = z
           })
           .passthrough(),
       )
-      .optional()
-      .default([]),
+      .optional(),
     otherOutcomes: z
       .array(
         z
@@ -350,8 +342,7 @@ export const OutcomesModuleSchema = z
           })
           .passthrough(),
       )
-      .optional()
-      .default([]),
+      .optional(),
   })
   .passthrough();
 
@@ -378,8 +369,7 @@ export const ReferencesModuleSchema = z
           })
           .passthrough(),
       )
-      .optional()
-      .default([]),
+      .optional(),
     seeAlsoLinks: z
       .array(
         z
@@ -389,8 +379,7 @@ export const ReferencesModuleSchema = z
           })
           .passthrough(),
       )
-      .optional()
-      .default([]),
+      .optional(),
     availIpds: z
       .array(
         z
@@ -402,8 +391,7 @@ export const ReferencesModuleSchema = z
           })
           .passthrough(),
       )
-      .optional()
-      .default([]),
+      .optional(),
   })
   .passthrough();
 
@@ -411,7 +399,7 @@ export const IpdSharingStatementModuleSchema = z
   .object({
     ipdSharing: z.string().optional(),
     description: z.string().optional(),
-    infoTypes: z.array(z.string()).optional().default([]),
+    infoTypes: z.array(z.string()).optional(),
     timeFrame: z.string().optional(),
     accessCriteria: z.string().optional(),
     url: z.string().optional(),

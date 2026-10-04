@@ -115,7 +115,7 @@ test("serves MCP 2026-07-28 over stdio with deterministic tools", async () => {
       runtimeDatabase.pragma("foreign_keys = ON");
       runtimeDatabase
         .prepare(
-          "INSERT INTO studies (nct_id, brief_title, raw_json) VALUES (?, ?, ?)",
+          "INSERT INTO studies (nct_id, brief_title, raw_json, raw_json_upstream) VALUES (?, ?, ?, 1)",
         )
         .run(
           "NCT00000001",
@@ -217,7 +217,7 @@ test("a cache hit keeps newer stored studies and adds missing ones", async () =>
       .update(JSON.stringify(params))
       .digest("hex");
     fs.writeFileSync(
-      path.join(runtimeDirectory, "cache", `search:${hash}.json`),
+      path.join(runtimeDirectory, "cache", `searchUpstream:${hash}.json`),
       JSON.stringify({
         params,
         timestamp: Date.now(),
@@ -270,7 +270,7 @@ test("reports a cut-off single-page search", async () => {
       },
     };
     fs.writeFileSync(
-      path.join(runtimeDirectory, "cache", `search:${key}.json`),
+      path.join(runtimeDirectory, "cache", `searchUpstream:${key}.json`),
       JSON.stringify({
         data: { studies: [study], nextPageToken: "next", totalCount: 50_000 },
         params,

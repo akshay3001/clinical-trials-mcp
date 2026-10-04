@@ -366,7 +366,7 @@ test("confines exports, preserves JSON falsy values, and refuses overwrite", asy
     path.dirname(destination),
     path.join(fs.realpathSync(exportRoot), "json"),
   );
-  assert.deepEqual(exported, [{ zero: 0, enabled: false, empty: "BLANK" }]);
+  assert.deepEqual(exported, [{ zero: 0, enabled: false, empty: "" }]);
   assert.equal(fs.statSync(destination).mode & 0o777, 0o600);
   await assert.rejects(
     exportModule.exportToJSON(studies, "results.json"),
@@ -780,4 +780,70 @@ test("matches PATIENT_REGISTRY by the patientRegistry flag", () => {
     "NCT00000001",
     "NCT00000002",
   ]);
+});
+
+test("exports upstream JSON shapes and keeps the main CSV bytes", async () => {
+  const { ClinicalTrialsAPIClient } = await import("../src/api/client.js");
+  const fixturePath = path.join(originalWorkingDirectory, "test", "fixtures");
+  const upstream: unknown = JSON.parse(
+    fs.readFileSync(path.join(fixturePath, "export-upstream.json"), "utf8"),
+  );
+  const originalFetch = globalThis.fetch;
+  const databasePath = path.join(runtimeDirectory, "upstream", "studies.db");
+  const database = new DatabaseManager(databasePath);
+  process.env.CLINICAL_TRIALS_EXPORTS_DIR = path.join(
+    runtimeDirectory,
+    "upstream-exports",
+  );
+
+  try {
+    globalThis.fetch = async () => Response.json({ studies: [upstream] });
+    const api = new ClinicalTrialsAPIClient();
+    const response = await api.search({ pageSize: 1 });
+    const study = response.studies[0];
+    assert.deepEqual(study, upstream);
+    globalThis.fetch = async () => Response.json(upstream);
+    assert.deepEqual(await api.getStudy(nctIdOf(study)), upstream);
+
+    database.upsertStudy(study);
+    database.createSession("upstream", {}, [nctIdOf(study)]);
+    const stored = database.getSessionResults("upstream", true);
+    assert.deepEqual(stored, [upstream]);
+    const jsonPath = await exportModule.exportToJSON(stored, "upstream.json");
+    const jsonlPath = await exportModule.exportToJSONL(
+      stored,
+      "upstream.jsonl",
+    );
+    const csvPath = await exportModule.exportToCSV(stored, "upstream.csv");
+    assert.deepEqual(JSON.parse(fs.readFileSync(jsonPath, "utf8")), [upstream]);
+    assert.deepEqual(
+      fs
+        .readFileSync(jsonlPath, "utf8")
+        .split("\n")
+        .map((line) => JSON.parse(line)),
+      [upstream],
+    );
+    assert.deepEqual(
+      fs.readFileSync(csvPath),
+      fs.readFileSync(path.join(fixturePath, "export-main.csv")),
+    );
+
+    // Old stored defaults cannot be removed without guessing field presence.
+    const legacy = new Database(databasePath);
+    try {
+      legacy.exec("UPDATE studies SET raw_json_upstream = 0");
+    } finally {
+      legacy.close();
+    }
+    assert.throws(
+      () => database.getSessionResults("upstream", true),
+      /Run search_trials again/,
+    );
+    assert.deepEqual(database.getSessionResults("upstream"), [upstream]);
+    database.upsertStudy(study);
+    assert.deepEqual(database.getSessionResults("upstream", true), [upstream]);
+  } finally {
+    globalThis.fetch = originalFetch;
+    database.close();
+  }
 });
