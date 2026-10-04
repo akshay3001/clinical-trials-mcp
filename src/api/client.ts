@@ -41,38 +41,22 @@ export class ClinicalTrialsAPIClient {
   }
 
   /**
-   * Build query string for ClinicalTrials.gov API
+   * Build the Essie `query.term` expression. Each part is put in parentheses
+   * before the parts are joined with AND. In Essie, AND binds tighter than
+   * OR, so an ungrouped "heart OR lung" would leak out of its own part.
    */
   private buildQuery(params: SearchParams): string {
-    const parts: string[] = [];
-
-    if (params.query) {
-      parts.push(params.query);
-    }
-
-    if (params.condition) {
-      parts.push(`AREA[ConditionSearch]${params.condition}`);
-    }
-
-    if (params.intervention) {
-      parts.push(`AREA[InterventionSearch]${params.intervention}`);
-    }
-
-    if (params.sponsorSearch) {
-      parts.push(`AREA[SponsorSearch]${params.sponsorSearch}`);
-    }
-
-    if (params.location) {
-      parts.push(`AREA[LocationSearch]${params.location}`);
-    }
-
-    // Phase is included as a regular search term (not an AREA)
-    if (params.phase) {
-      parts.push(params.phase);
-    }
-
-    // Combine with AND
-    return parts.length > 0 ? parts.join(" AND ") : "";
+    return [
+      params.query && `(${params.query})`,
+      params.condition && `AREA[ConditionSearch](${params.condition})`,
+      params.intervention && `AREA[InterventionSearch](${params.intervention})`,
+      params.sponsorSearch && `AREA[SponsorSearch](${params.sponsorSearch})`,
+      params.location && `AREA[LocationSearch](${params.location})`,
+      // Phase is included as a regular search term (not an AREA)
+      params.phase && `(${params.phase})`,
+    ]
+      .filter(Boolean)
+      .join(" AND ");
   }
 
   /**
