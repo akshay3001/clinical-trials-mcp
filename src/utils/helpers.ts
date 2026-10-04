@@ -283,18 +283,20 @@ export function filterStudies(
       if (masking !== filters.masking.toUpperCase()) return false;
     }
 
-    // Filter by FDA regulated (drug OR device)
+    // Filter by FDA regulated (drug OR device). Either flag true means
+    // regulated; otherwise any flag false means not regulated. Studies with
+    // both flags missing are unknown and excluded for both filter values.
     if (filters.fdaRegulated !== undefined) {
-      const oversight = protocol.oversightModule;
-      if (oversight) {
-        const isFDARegulated =
-          oversight.isFdaRegulatedDrug || oversight.isFdaRegulatedDevice;
-        if (isFDARegulated !== filters.fdaRegulated) return false;
-      } else {
-        // If oversight module doesn't exist, we can't filter by this criteria
-        // Skip studies without oversight data when filter is specified
-        return false;
-      }
+      const flags = [
+        protocol.oversightModule?.isFdaRegulatedDrug,
+        protocol.oversightModule?.isFdaRegulatedDevice,
+      ];
+      const isFDARegulated = flags.includes(true)
+        ? true
+        : flags.includes(false)
+          ? false
+          : undefined;
+      if (isFDARegulated !== filters.fdaRegulated) return false;
     }
 
     // Filter by keyword (substring search in keywords array)
