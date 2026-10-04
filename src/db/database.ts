@@ -618,6 +618,16 @@ export class DatabaseManager {
   }
 
   /**
+   * Check if a study is stored, without parsing its raw JSON
+   */
+  hasStudy(nctId: string): boolean {
+    return (
+      this.db.prepare("SELECT 1 FROM studies WHERE nct_id = ?").get(nctId) !==
+      undefined
+    );
+  }
+
+  /**
    * Full-text search
    */
   fullTextSearch(query: string, limit: number = 100): string[] {
