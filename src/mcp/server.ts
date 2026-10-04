@@ -695,6 +695,7 @@ export function createServer(): McpServer {
 }
 
 export function main(): void {
+  cache.clearExpired();
   serveStdio(createServer, {
     onerror: (error) => console.error("MCP stdio error:", error),
   });
