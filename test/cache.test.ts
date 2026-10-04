@@ -60,7 +60,7 @@ test("evicts the least recently used memory entry past 100 entries", () => {
   assert.equal(manager.get("search", { i: 100 }), "result 100");
 });
 
-test("clearExpired removes expired entries and keeps raw JSONL logs", () => {
+test("clearExpired removes expired entries and keeps other files", () => {
   const cacheDir = path.join(runtimeDirectory, "expired");
   const manager = new CacheManager(cacheDir);
   manager.set("search", { query: "fresh" }, "fresh results");
@@ -70,12 +70,18 @@ test("clearExpired removes expired entries and keeps raw JSONL logs", () => {
     path.join(cacheDir, "search:expired.json"),
     JSON.stringify({ data: "old", params: {}, timestamp: 0 }),
   );
-  fs.writeFileSync(path.join(cacheDir, "broken.json"), "not json");
+  fs.writeFileSync(path.join(cacheDir, "search:broken.json"), "not json");
+  // A file this cache did not write stays, even when it looks expired.
+  fs.writeFileSync(
+    path.join(cacheDir, "other.json"),
+    JSON.stringify({ timestamp: 0 }),
+  );
   fs.writeFileSync(path.join(cacheDir, "raw-2026-01-01.jsonl"), "{}\n{}\n");
 
   manager.clearExpired();
 
   assert.deepEqual(fs.readdirSync(cacheDir).sort(), [
+    "other.json",
     "raw-2026-01-01.jsonl",
     freshFile,
   ]);
