@@ -134,11 +134,12 @@ test("groups each query part so OR stays inside its own part", async () => {
       query: "heart OR lung",
       condition: "diabetes OR obesity",
       location: "Boston",
+      phase: ["PHASE2", "PHASE3"],
       pageSize: 10,
     });
     assert.equal(
       queryTerm,
-      "(heart OR lung) AND AREA[ConditionSearch](diabetes OR obesity) AND AREA[LocationSearch](Boston)",
+      "(heart OR lung) AND AREA[ConditionSearch](diabetes OR obesity) AND AREA[LocationSearch](Boston) AND AREA[Phase](PHASE2 OR PHASE3)",
     );
   } finally {
     await new Promise<void>((resolve, reject) =>

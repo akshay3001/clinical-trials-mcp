@@ -130,7 +130,7 @@ Search for Phase 3 cardiac trials, then filter to:
 ```
 
 **Expected Flow:**
-- `search_trials`: condition="cardiac", phase="Phase 3"
+- `search_trials`: condition="cardiac", phase=["PHASE3"]
 - `refine_results`: sessionId="...", fdaRegulated=true, masking="QUADRUPLE", allocation="RANDOMIZED", enrollmentMin=100, enrollmentMax=500
 - Studies without an enrollment count are excluded. Date bounds work the same way, and a partial date such as "2020-03" passes only if the whole month is inside the bounds.
 - `summarize_session`: sessionId="...", maxResults=5
@@ -199,7 +199,7 @@ Find all Phase 3 pembrolizumab trials sponsored by Merck, filter to recruiting t
 ```
 
 **Expected Flow:**
-- `search_trials`: intervention="pembrolizumab", phase="Phase 3", sponsorSearch="Merck"
+- `search_trials`: intervention="pembrolizumab", phase=["PHASE3"], sponsorSearch="Merck"
 - `refine_results`: sessionId="...", sponsorClass="INDUSTRY", hasResults=true
 - `export_results`: sessionId="...", format="json", outputPath="merck_pembrolizumab.json"
 

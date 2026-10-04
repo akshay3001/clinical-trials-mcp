@@ -1,11 +1,23 @@
 import { z } from "zod";
 
+// Phase values as the API stores them; NA is for studies with no phase.
+export const PhaseSchema = z.enum([
+  "EARLY_PHASE1",
+  "PHASE1",
+  "PHASE2",
+  "PHASE3",
+  "PHASE4",
+  "NA",
+]);
+
+export type Phase = z.infer<typeof PhaseSchema>;
+
 // Search parameters schema
 export const SearchParamsSchema = z.object({
   query: z.string().optional(),
   condition: z.string().optional(),
   intervention: z.string().optional(),
-  phase: z.string().optional(),
+  phase: z.array(PhaseSchema).min(1).optional(),
   status: z.string().optional(),
   location: z.string().optional(),
   sponsorSearch: z.string().optional(),
