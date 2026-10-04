@@ -79,6 +79,14 @@ function isWithinDateBounds(
 }
 
 /**
+ * Converts a display label such as "Dietary Supplement" to the upstream enum
+ * style "DIETARY_SUPPLEMENT". Enum values pass through unchanged.
+ */
+function toEnumValue(value: string): string {
+  return value.trim().toUpperCase().replace(/ +/g, "_");
+}
+
+/**
  * Filter studies based on refinement criteria
  */
 export function filterStudies(
@@ -139,9 +147,9 @@ export function filterStudies(
 
     // Filter by intervention type
     if (filters.interventionType) {
+      const type = toEnumValue(filters.interventionType);
       const hasType = interventions.some(
-        (int) =>
-          int.type?.toLowerCase() === filters.interventionType!.toLowerCase(),
+        (int) => int.type !== undefined && toEnumValue(int.type) === type,
       );
       if (!hasType) return false;
     }
@@ -185,28 +193,31 @@ export function filterStudies(
 
     // Filter by allocation
     if (filters.allocation) {
-      const allocation = protocol.designModule?.designInfo?.allocation
-        ?.toUpperCase()
-        .replace(/ /g, "_");
-      if (allocation !== filters.allocation.toUpperCase().replace(/ /g, "_"))
+      const allocation = protocol.designModule?.designInfo?.allocation;
+      if (
+        allocation === undefined ||
+        toEnumValue(allocation) !== toEnumValue(filters.allocation)
+      )
         return false;
     }
 
     // Filter by intervention model
     if (filters.interventionModel) {
-      const model = protocol.designModule?.designInfo?.interventionModel
-        ?.toUpperCase()
-        .replace(/ /g, "_");
-      if (model !== filters.interventionModel.toUpperCase().replace(/ /g, "_"))
+      const model = protocol.designModule?.designInfo?.interventionModel;
+      if (
+        model === undefined ||
+        toEnumValue(model) !== toEnumValue(filters.interventionModel)
+      )
         return false;
     }
 
     // Filter by primary purpose
     if (filters.primaryPurpose) {
-      const purpose = protocol.designModule?.designInfo?.primaryPurpose
-        ?.toUpperCase()
-        .replace(/ /g, "_");
-      if (purpose !== filters.primaryPurpose.toUpperCase().replace(/ /g, "_"))
+      const purpose = protocol.designModule?.designInfo?.primaryPurpose;
+      if (
+        purpose === undefined ||
+        toEnumValue(purpose) !== toEnumValue(filters.primaryPurpose)
+      )
         return false;
     }
 

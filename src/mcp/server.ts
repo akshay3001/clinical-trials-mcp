@@ -203,7 +203,7 @@ const refineResultsInputSchema = z
       )
       .optional(),
     interventionType: boundedText(
-      "Filter by intervention type",
+      'Filter by intervention type, for example "DRUG" or "DIETARY_SUPPLEMENT". Case and spaces are normalized, so "Dietary Supplement" also matches.',
       200,
     ).optional(),
     hasResults: z
