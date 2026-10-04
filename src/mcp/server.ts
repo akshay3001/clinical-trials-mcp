@@ -24,7 +24,7 @@ import {
 import { exportToCSV, exportToJSON, exportToJSONL } from "../utils/export.js";
 
 const SERVER_NAME = "clinical-trials-mcp";
-const SERVER_VERSION = "2.0.0";
+const SERVER_VERSION = "2.2.0";
 const DEFAULT_PAGE_SIZE = 1000;
 const DEFAULT_FETCH_LIMIT = 10_000;
 const MAX_FETCH_PAGES = 100;
