@@ -355,3 +355,39 @@ test("excludes studies with missing values when numeric or date bounds are set",
     "NCT00000004",
   ]);
 });
+
+test("shows and stores an enrollment count of 0", () => {
+  const study = {
+    protocolSection: {
+      identificationModule: { nctId: "NCT00000012", briefTitle: "Withdrawn" },
+      statusModule: { overallStatus: "WITHDRAWN" },
+      designModule: { enrollmentInfo: { count: 0, type: "ACTUAL" } },
+    },
+  } as Study;
+
+  assert.match(
+    helperModule.formatStudySummary(study),
+    /\*\*Enrollment:\*\* 0 participants \(ACTUAL\)/,
+  );
+  assert.match(helperModule.formatStudyList([study]), /\| Enrollment: 0\n/);
+
+  const databasePath = path.join(runtimeDirectory, "enrollment", "studies.db");
+  const database = new DatabaseManager(databasePath);
+  try {
+    database.upsertStudy(study);
+  } finally {
+    database.close();
+  }
+
+  const reopenedDatabase = new Database(databasePath, { readonly: true });
+  try {
+    assert.deepEqual(
+      reopenedDatabase
+        .prepare("SELECT enrollment_count FROM studies WHERE nct_id = ?")
+        .get("NCT00000012"),
+      { enrollment_count: 0 },
+    );
+  } finally {
+    reopenedDatabase.close();
+  }
+});

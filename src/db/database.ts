@@ -450,7 +450,7 @@ export class DatabaseManager {
       overallStatus: status.overallStatus,
       studyType: design?.studyType || null,
       phase,
-      enrollmentCount: design?.enrollmentInfo?.count || null,
+      enrollmentCount: design?.enrollmentInfo?.count ?? null,
       enrollmentType: design?.enrollmentInfo?.type || null,
       startDate: status.startDateStruct?.date || null,
       startDateType: status.startDateStruct?.type || null,
