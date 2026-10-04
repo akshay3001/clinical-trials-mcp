@@ -165,9 +165,15 @@ const maskingSchema = z.enum([
 const refineResultsInputSchema = z
   .object({
     sessionId: sessionIdSchema,
-    locationCountry: boundedText("Filter by country").optional(),
-    locationState: boundedText("Filter by state or province").optional(),
-    locationCity: boundedText("Filter by city").optional(),
+    locationCountry: boundedText(
+      "Filter by country. Exact name, case-insensitive. With other location filters, one site must match all of them.",
+    ).optional(),
+    locationState: boundedText(
+      "Filter by state or province. Exact name, case-insensitive. With other location filters, one site must match all of them.",
+    ).optional(),
+    locationCity: boundedText(
+      "Filter by city. Exact name, case-insensitive. With other location filters, one site must match all of them.",
+    ).optional(),
     enrollmentMin: z
       .number()
       .int()
