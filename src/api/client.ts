@@ -12,6 +12,7 @@ const DEFAULT_REQUEST_TIMEOUT_MS = 30_000;
 const DEFAULT_MAX_PAGES = 100;
 const MAX_RETRIES = 3;
 const RETRY_DELAY_MS = 1000;
+const MAX_RETRY_AFTER_MS = 30_000;
 
 export interface APIRequestOptions {
   signal?: AbortSignal;
@@ -21,6 +22,23 @@ export interface APIRequestOptions {
 export interface SearchAllOptions extends APIRequestOptions {
   maxPages?: number;
   maxResults?: number;
+}
+
+/**
+ * Convert a Retry-After header (delay seconds or HTTP date) to a wait in
+ * milliseconds, capped at MAX_RETRY_AFTER_MS. Returns undefined when the
+ * header is missing or invalid, so the caller uses exponential backoff.
+ */
+function parseRetryAfter(header: string | null): number | undefined {
+  const value = header?.trim();
+  if (!value) return undefined;
+
+  const delayMs = /^\d+$/.test(value)
+    ? Number(value) * 1000
+    : Date.parse(value) - Date.now();
+  if (Number.isNaN(delayMs)) return undefined;
+
+  return Math.min(Math.max(delayMs, 0), MAX_RETRY_AFTER_MS);
 }
 
 class HTTPResponseError extends Error {
@@ -93,7 +111,8 @@ export class ClinicalTrialsAPIClient {
   }
 
   /**
-   * Fetch with retry logic
+   * Fetch with up to `retries` attempts. Each attempt has its own timeout.
+   * A caller abort stops the attempt and any backoff wait at once.
    */
   private async fetchWithRetry(
     url: string,
@@ -105,30 +124,34 @@ export class ClinicalTrialsAPIClient {
       throw new RangeError("timeoutMs must be a positive finite number");
     }
 
-    const timeoutSignal = AbortSignal.timeout(timeoutMs);
-    const signal = options.signal
-      ? AbortSignal.any([options.signal, timeoutSignal])
-      : timeoutSignal;
     let lastError: Error | null = null;
     let attempts = 0;
 
     for (let i = 0; i < retries; i++) {
-      signal.throwIfAborted();
+      options.signal?.throwIfAborted();
       attempts += 1;
+
+      const timeoutSignal = AbortSignal.timeout(timeoutMs);
+      const signal = options.signal
+        ? AbortSignal.any([options.signal, timeoutSignal])
+        : timeoutSignal;
+      let retryAfterMs: number | undefined;
 
       try {
         const response = await fetch(url, { signal });
 
         if (!response.ok) {
+          if (response.status === 429) {
+            retryAfterMs = parseRetryAfter(response.headers.get("retry-after"));
+          }
           throw new HTTPResponseError(response.status, response.statusText);
         }
 
         return response;
       } catch (error) {
-        if (signal.aborted) {
-          throw signal.reason;
-        }
+        options.signal?.throwIfAborted();
 
+        // A timed-out attempt is retryable, like a network error.
         lastError =
           error instanceof Error ? error : new Error("Unknown fetch error");
 
@@ -138,8 +161,10 @@ export class ClinicalTrialsAPIClient {
           lastError.status >= 500;
 
         if (retryable && i < retries - 1) {
-          // Exponential backoff
-          await this.waitForRetry(RETRY_DELAY_MS * Math.pow(2, i), signal);
+          await this.waitForRetry(
+            retryAfterMs ?? RETRY_DELAY_MS * Math.pow(2, i),
+            options.signal,
+          );
         } else {
           break;
         }
@@ -153,25 +178,25 @@ export class ClinicalTrialsAPIClient {
 
   private async waitForRetry(
     delayMs: number,
-    signal: AbortSignal,
+    signal?: AbortSignal,
   ): Promise<void> {
     await new Promise<void>((resolve, reject) => {
-      if (signal.aborted) {
+      if (signal?.aborted) {
         reject(signal.reason);
         return;
       }
 
       const timeout = setTimeout(() => {
-        signal.removeEventListener("abort", onAbort);
+        signal?.removeEventListener("abort", onAbort);
         resolve();
       }, delayMs);
 
       const onAbort = () => {
         clearTimeout(timeout);
-        reject(signal.reason);
+        reject(signal?.reason);
       };
 
-      signal.addEventListener("abort", onAbort, { once: true });
+      signal?.addEventListener("abort", onAbort, { once: true });
     });
   }
 

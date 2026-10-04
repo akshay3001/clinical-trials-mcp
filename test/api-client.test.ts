@@ -339,3 +339,64 @@ test("propagates caller cancellation to upstream fetch", async () => {
     );
   }
 });
+
+test("gives each attempt its own timeout", async () => {
+  let requestCount = 0;
+  const server = createServer((_request, response) => {
+    requestCount += 1;
+    response.writeHead(503).end("unavailable");
+  });
+
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address();
+  assert.ok(address && typeof address !== "string");
+  const client = new ClinicalTrialsAPIClient(
+    `http://127.0.0.1:${address.port}`,
+  );
+
+  try {
+    // Backoff waits are 1s and 2s, so the full run is longer than timeoutMs.
+    await assert.rejects(
+      client.search({ pageSize: 10 }, { timeoutMs: 2_500 }),
+      /after 3 attempts: HTTP 503/,
+    );
+    assert.equal(requestCount, 3);
+  } finally {
+    await new Promise<void>((resolve, reject) =>
+      server.close((error) => (error ? reject(error) : resolve())),
+    );
+  }
+});
+
+test("waits for Retry-After on a 429 instead of the exponential backoff", async () => {
+  const retryAfter = ["0", new Date().toUTCString()];
+  let requestCount = 0;
+  const server = createServer((_request, response) => {
+    const header = retryAfter[requestCount++];
+    if (header !== undefined) {
+      response.writeHead(429, { "retry-after": header }).end();
+      return;
+    }
+    response.setHeader("content-type", "application/json");
+    response.end(JSON.stringify({ studies: [], totalCount: 0 }));
+  });
+
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address();
+  assert.ok(address && typeof address !== "string");
+  const client = new ClinicalTrialsAPIClient(
+    `http://127.0.0.1:${address.port}`,
+  );
+
+  try {
+    // Exponential backoff would wait 1s + 2s. Both headers mean "now".
+    const start = Date.now();
+    await client.search({ pageSize: 10 });
+    assert.equal(requestCount, 3);
+    assert.ok(Date.now() - start < 900, `took ${Date.now() - start}ms`);
+  } finally {
+    await new Promise<void>((resolve, reject) =>
+      server.close((error) => (error ? reject(error) : resolve())),
+    );
+  }
+});
