@@ -16,6 +16,11 @@ const RELATED_TABLES = [
   "secondary_outcomes",
 ] as const;
 
+// Maps an optional upstream boolean to a SQLite value. A missing flag is
+// unknown, so it becomes NULL, not false.
+const toSqliteBoolean = (value: boolean | undefined): 0 | 1 | null =>
+  value === undefined ? null : value ? 1 : 0;
+
 export interface SearchSessionMetadata {
   sessionId: string;
   searchParams: unknown;
@@ -370,8 +375,10 @@ export class DatabaseManager {
           interventionModel: design?.designInfo?.interventionModel || null,
           primaryPurpose: design?.designInfo?.primaryPurpose || null,
           masking: design?.designInfo?.maskingInfo?.masking || null,
-          isFdaRegulatedDrug: oversight?.isFdaRegulatedDrug ? 1 : 0,
-          isFdaRegulatedDevice: oversight?.isFdaRegulatedDevice ? 1 : 0,
+          isFdaRegulatedDrug: toSqliteBoolean(oversight?.isFdaRegulatedDrug),
+          isFdaRegulatedDevice: toSqliteBoolean(
+            oversight?.isFdaRegulatedDevice,
+          ),
           ageGroups: eligibility?.stdAges?.join(",") || null,
         });
       } catch (error) {
@@ -499,22 +506,22 @@ export class DatabaseManager {
       primaryCompletionDate: status.primaryCompletionDateStruct?.date || null,
       completionDate: status.completionDateStruct?.date || null,
       lastUpdatePosted: status.lastUpdatePostDateStruct?.date || null,
-      hasResults: study.hasResults ? 1 : 0,
+      hasResults: toSqliteBoolean(study.hasResults),
       briefSummary: description?.briefSummary || null,
       detailedDescription: description?.detailedDescription || null,
       eligibilityCriteria: eligibility?.eligibilityCriteria || null,
       sex: eligibility?.sex || null,
       minimumAge: eligibility?.minimumAge || null,
       maximumAge: eligibility?.maximumAge || null,
-      healthyVolunteers: eligibility?.healthyVolunteers ? 1 : 0,
+      healthyVolunteers: toSqliteBoolean(eligibility?.healthyVolunteers),
       leadSponsorName: sponsor?.leadSponsor?.name || null,
       leadSponsorClass: sponsor?.leadSponsor?.class || null,
       allocation: design?.designInfo?.allocation || null,
       interventionModel: design?.designInfo?.interventionModel || null,
       primaryPurpose: design?.designInfo?.primaryPurpose || null,
       masking: design?.designInfo?.maskingInfo?.masking || null,
-      isFdaRegulatedDrug: oversight?.isFdaRegulatedDrug ? 1 : 0,
-      isFdaRegulatedDevice: oversight?.isFdaRegulatedDevice ? 1 : 0,
+      isFdaRegulatedDrug: toSqliteBoolean(oversight?.isFdaRegulatedDrug),
+      isFdaRegulatedDevice: toSqliteBoolean(oversight?.isFdaRegulatedDevice),
       ageGroups,
       rawJson: JSON.stringify(study),
     });
