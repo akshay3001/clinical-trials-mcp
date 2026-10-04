@@ -96,30 +96,24 @@ export function filterStudies(
     const enrollment = protocol.designModule?.enrollmentInfo?.count;
     const startDate = protocol.statusModule?.startDateStruct?.date;
 
-    // Filter by location country
-    if (filters.locationCountry) {
-      const hasCountry = locations.some((loc) =>
-        loc.country
-          ?.toLowerCase()
-          .includes(filters.locationCountry!.toLowerCase()),
+    // Location fields match exactly, ignoring case, and one site must match
+    // every location field set in this call. Separate refine calls do not
+    // share a site, because sessions do not keep earlier filters.
+    const locationFilters = [
+      ["country", filters.locationCountry],
+      ["state", filters.locationState],
+      ["city", filters.locationCity],
+    ] as const;
+    const activeLocationFilters = locationFilters.flatMap(([field, value]) =>
+      value ? [{ field, value: value.trim().toLowerCase() }] : [],
+    );
+    if (activeLocationFilters.length > 0) {
+      const hasSite = locations.some((loc) =>
+        activeLocationFilters.every(
+          ({ field, value }) => loc[field]?.trim().toLowerCase() === value,
+        ),
       );
-      if (!hasCountry) return false;
-    }
-
-    // Filter by location state
-    if (filters.locationState) {
-      const hasState = locations.some((loc) =>
-        loc.state?.toLowerCase().includes(filters.locationState!.toLowerCase()),
-      );
-      if (!hasState) return false;
-    }
-
-    // Filter by location city
-    if (filters.locationCity) {
-      const hasCity = locations.some((loc) =>
-        loc.city?.toLowerCase().includes(filters.locationCity!.toLowerCase()),
-      );
-      if (!hasCity) return false;
+      if (!hasSite) return false;
     }
 
     // Enrollment bounds are inclusive. Studies without a count are excluded.
