@@ -445,6 +445,9 @@ export function createServer(): McpServer {
         const cachedResponse = cache.get<SearchResponse>("search", cacheParams);
 
         let studies: Study[];
+        // A fresh API response is cached only after its session is created,
+        // so a failed session creation is not repeated from the cache.
+        let freshResponse: SearchResponse | undefined;
         if (cachedResponse) {
           studies = fetchAll
             ? cachedResponse.studies.slice(0, fetchLimit)
@@ -464,13 +467,12 @@ export function createServer(): McpServer {
             return fetchedStudies;
           });
 
-          const response: SearchResponse = {
+          freshResponse = {
             studies,
             nextPageToken: undefined,
             totalCount: studies.length,
           };
-          cache.set("search", cacheParams, response);
-          cache.saveRawResponse(response, searchParams);
+          cache.saveRawResponse(freshResponse, searchParams);
         } else {
           ctx.mcpReq.signal.throwIfAborted();
           const response = await withApiPermit(ctx.mcpReq.signal, () =>
@@ -480,7 +482,7 @@ export function createServer(): McpServer {
           );
           ctx.mcpReq.signal.throwIfAborted();
           studies = response.studies;
-          cache.set("search", cacheParams, response);
+          freshResponse = response;
           cache.saveRawResponse(response, searchParams);
         }
 
@@ -494,16 +496,23 @@ export function createServer(): McpServer {
         ctx.mcpReq.signal.throwIfAborted();
 
         const sessionId = generateSessionId();
-        const nctIds = studies.map(
-          (study) => study.protocolSection.identificationModule.nctId,
-        );
+        // searchAll already removes duplicates. This also covers a single
+        // page and cache entries written before that fix.
+        const nctIds = [
+          ...new Set(
+            studies.map(
+              (study) => study.protocolSection.identificationModule.nctId,
+            ),
+          ),
+        ];
         db.createSession(sessionId, searchParams, nctIds);
+        if (freshResponse) cache.set("search", cacheParams, freshResponse);
 
         return {
           content: [
             {
               type: "text",
-              text: `Search found ${studies.length.toLocaleString("en-US")} ${studies.length === 1 ? "study" : "studies"}.\n**Session ID:** ${sessionId}\n\nUse this session ID to refine results, call summarize_session for study summaries, or export data.`,
+              text: `Search found ${nctIds.length.toLocaleString("en-US")} ${nctIds.length === 1 ? "study" : "studies"}.\n**Session ID:** ${sessionId}\n\nUse this session ID to refine results, call summarize_session for study summaries, or export data.`,
             },
           ],
         };

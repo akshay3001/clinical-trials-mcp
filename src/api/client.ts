@@ -262,7 +262,9 @@ export class ClinicalTrialsAPIClient {
   }
 
   /**
-   * Get all results by following pagination
+   * Get all results by following pagination. Upstream data can change between
+   * page requests, so a study can appear on two pages; only its first
+   * occurrence is yielded, in API order.
    */
   async *searchAll(
     params: SearchParams,
@@ -286,6 +288,7 @@ export class ClinicalTrialsAPIClient {
     let pagesFetched = 0;
     let resultsYielded = 0;
     const seenPageTokens = new Set<string>();
+    const seenNctIds = new Set<string>();
 
     while (hasMore) {
       options.signal?.throwIfAborted();
@@ -301,12 +304,16 @@ export class ClinicalTrialsAPIClient {
       const response = await this.search(searchParams, options);
       pagesFetched += 1;
 
+      const newStudies = response.studies.filter((study) => {
+        const nctId = study.protocolSection.identificationModule.nctId;
+        if (seenNctIds.has(nctId)) return false;
+        seenNctIds.add(nctId);
+        return true;
+      });
       const remaining =
         maxResults === undefined ? undefined : maxResults - resultsYielded;
       const studies =
-        remaining === undefined
-          ? response.studies
-          : response.studies.slice(0, remaining);
+        remaining === undefined ? newStudies : newStudies.slice(0, remaining);
 
       yield studies;
       resultsYielded += studies.length;

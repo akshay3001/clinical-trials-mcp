@@ -111,6 +111,50 @@ test("bounds pagination and does not retry non-retryable HTTP failures", async (
   }
 });
 
+test("fetchAll drops a study that repeats on a later page", async () => {
+  const withId = (nctId: string) => ({
+    protocolSection: {
+      ...study.protocolSection,
+      identificationModule: { nctId, briefTitle: nctId },
+    },
+  });
+  const pages: Record<string, { studies: unknown[]; nextPageToken?: string }> =
+    {
+      first: {
+        studies: [withId("NCT00000001"), withId("NCT00000002")],
+        nextPageToken: "second",
+      },
+      second: { studies: [withId("NCT00000002"), withId("NCT00000003")] },
+    };
+  const server = createServer((request, response) => {
+    const url = new URL(request.url ?? "/", "http://127.0.0.1");
+    const page = pages[url.searchParams.get("pageToken") ?? "first"];
+    response.setHeader("content-type", "application/json");
+    response.end(JSON.stringify({ ...page, totalCount: 3 }));
+  });
+
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address();
+  assert.ok(address && typeof address !== "string");
+  const client = new ClinicalTrialsAPIClient(
+    `http://127.0.0.1:${address.port}`,
+  );
+
+  try {
+    const nctIds: string[] = [];
+    for await (const batch of client.searchAll({ pageSize: 2 })) {
+      nctIds.push(
+        ...batch.map((s) => s.protocolSection.identificationModule.nctId),
+      );
+    }
+    assert.deepEqual(nctIds, ["NCT00000001", "NCT00000002", "NCT00000003"]);
+  } finally {
+    await new Promise<void>((resolve, reject) =>
+      server.close((error) => (error ? reject(error) : resolve())),
+    );
+  }
+});
+
 test("groups each query part so OR stays inside its own part", async () => {
   let queryTerm: string | null = null;
   const server = createServer((request, response) => {
