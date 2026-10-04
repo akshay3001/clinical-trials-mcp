@@ -503,8 +503,6 @@ export interface FilterParams {
   enrollmentMax?: number;
   startDateAfter?: string;
   startDateBefore?: string;
-  completionDateAfter?: string;
-  completionDateBefore?: string;
   interventionType?: string;
   hasResults?: boolean;
   // Phase 1 filters

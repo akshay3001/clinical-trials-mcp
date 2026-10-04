@@ -91,36 +91,10 @@ export function filterStudies(
   return studies.filter((study) => {
     const protocol = study.protocolSection;
 
-    // Phase filtering according to ClinicalTrials.gov API enum values:
-    // NA (Not Applicable), EARLY_PHASE1 (Early Phase 1), PHASE1 (Phase 1),
-    // PHASE2 (Phase 2), PHASE3 (Phase 3), PHASE4 (Phase 4)
-    if (filters && (filters as any).phase) {
-      const phaseFilter = (filters as any).phase;
-      const phases = protocol.designModule?.phases || [];
-
-      // Normalize phase filter to match API source values (case-insensitive)
-      const normalizedFilter = phaseFilter.toLowerCase();
-
-      // Check if study has the requested phase
-      const hasMatchingPhase = phases.some((p: string) => {
-        const normalizedPhase = p.toLowerCase();
-        // Handle exact match or early phase variants
-        if (normalizedFilter === "phase 1") {
-          // Accept "Phase 1" or "Early Phase 1" for Phase 1 searches
-          return (
-            normalizedPhase === "phase 1" || normalizedPhase === "early phase 1"
-          );
-        }
-        return normalizedPhase === normalizedFilter;
-      });
-
-      if (!hasMatchingPhase) return false;
-    }
     const locations = protocol.contactsLocationsModule?.locations || [];
     const interventions = protocol.armsInterventionsModule?.interventions || [];
     const enrollment = protocol.designModule?.enrollmentInfo?.count;
     const startDate = protocol.statusModule?.startDateStruct?.date;
-    const completionDate = protocol.statusModule?.completionDateStruct?.date;
 
     // Filter by location country
     if (filters.locationCountry) {
@@ -164,15 +138,6 @@ export function filterStudies(
         startDate,
         filters.startDateAfter,
         filters.startDateBefore,
-      )
-    )
-      return false;
-
-    if (
-      !isWithinDateBounds(
-        completionDate,
-        filters.completionDateAfter,
-        filters.completionDateBefore,
       )
     )
       return false;
