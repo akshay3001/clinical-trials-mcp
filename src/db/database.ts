@@ -165,10 +165,12 @@ export class DatabaseManager {
         expires_at INTEGER
       );
 
-      -- Session results (many-to-many between sessions and studies)
+      -- Session results (many-to-many between sessions and studies).
+      -- position keeps the API relevance order.
       CREATE TABLE IF NOT EXISTS session_results (
         session_id TEXT NOT NULL REFERENCES search_sessions(session_id) ON DELETE CASCADE,
         nct_id TEXT NOT NULL REFERENCES studies(nct_id) ON DELETE CASCADE,
+        position INTEGER NOT NULL DEFAULT 0,
         PRIMARY KEY (session_id, nct_id)
       );
 
@@ -315,6 +317,20 @@ export class DatabaseManager {
     this.db.exec(
       "CREATE INDEX IF NOT EXISTS idx_search_sessions_expires_at ON search_sessions(expires_at)",
     );
+
+    const resultColumns = this.db.pragma(
+      "table_info(session_results)",
+    ) as Array<{ name: string }>;
+
+    if (!resultColumns.some((column) => column.name === "position")) {
+      // Older versions inserted rows in API order, so rowid order recovers it.
+      this.db.transaction(() => {
+        this.db.exec(
+          "ALTER TABLE session_results ADD COLUMN position INTEGER NOT NULL DEFAULT 0",
+        );
+        this.db.exec("UPDATE session_results SET position = rowid");
+      })();
+    }
   }
 
   /**
@@ -646,8 +662,8 @@ export class DatabaseManager {
     `);
 
     const insertResult = this.db.prepare(`
-      INSERT INTO session_results (session_id, nct_id)
-      VALUES (?, ?)
+      INSERT INTO session_results (session_id, nct_id, position)
+      VALUES (?, ?, ?)
     `);
 
     const create = this.db.transaction(() => {
@@ -657,9 +673,9 @@ export class DatabaseManager {
         this.getExpirationEpochSeconds(),
       );
 
-      for (const nctId of nctIds) {
-        insertResult.run(sessionId, nctId);
-      }
+      nctIds.forEach((nctId, position) => {
+        insertResult.run(sessionId, nctId, position);
+      });
     });
 
     create();
@@ -731,7 +747,7 @@ export class DatabaseManager {
   }
 
   /**
-   * Get session results
+   * Get session results in the stored order (API relevance order).
    */
   getSessionResults(sessionId: string): Study[] {
     if (!this.touchSession(sessionId)) {
@@ -744,6 +760,7 @@ export class DatabaseManager {
       FROM studies s
       INNER JOIN session_results sr ON s.nct_id = sr.nct_id
       WHERE sr.session_id = ?
+      ORDER BY sr.position
     `);
 
     const rows = stmt.all(sessionId) as { raw_json: string }[];
@@ -759,8 +776,8 @@ export class DatabaseManager {
     `);
 
     const insertResult = this.db.prepare(`
-      INSERT INTO session_results (session_id, nct_id)
-      VALUES (?, ?)
+      INSERT INTO session_results (session_id, nct_id, position)
+      VALUES (?, ?, ?)
     `);
 
     const update = this.db.transaction(() => {
@@ -769,9 +786,9 @@ export class DatabaseManager {
       }
 
       deleteResults.run(sessionId);
-      for (const nctId of nctIds) {
-        insertResult.run(sessionId, nctId);
-      }
+      nctIds.forEach((nctId, position) => {
+        insertResult.run(sessionId, nctId, position);
+      });
       return true;
     });
 
