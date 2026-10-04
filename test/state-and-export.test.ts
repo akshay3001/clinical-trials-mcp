@@ -21,6 +21,9 @@ const [{ DatabaseManager, db }, exportModule, helperModule] = await Promise.all(
   ],
 );
 
+const nctIdOf = (study: Study) =>
+  study.protocolSection.identificationModule.nctId;
+
 test.after(() => {
   db.close();
   process.chdir(originalWorkingDirectory);
@@ -45,6 +48,39 @@ test("uses opaque UUID session handles and preserves valid empty sessions", () =
 
     database.cleanupExpiredSessions(Date.now() + 2_000);
     assert.equal(database.sessionExists(sessionId), false);
+  } finally {
+    database.close();
+  }
+});
+
+test("keeps API order in session results across refinement", () => {
+  const databasePath = path.join(runtimeDirectory, "order", "sessions.db");
+  const database = new DatabaseManager(databasePath);
+  const apiOrder = ["NCT00000009", "NCT00000003", "NCT00000002"];
+
+  try {
+    for (const nctId of apiOrder) {
+      database.upsertStudy({
+        protocolSection: {
+          identificationModule: { nctId, briefTitle: nctId },
+          statusModule: { overallStatus: "RECRUITING" },
+        },
+      } as Study);
+    }
+    database.createSession("order-session", {}, apiOrder);
+    assert.deepEqual(
+      database.getSessionResults("order-session").map(nctIdOf),
+      apiOrder,
+    );
+
+    database.updateSessionResults("order-session", [
+      "NCT00000009",
+      "NCT00000002",
+    ]);
+    assert.deepEqual(database.getSessionResults("order-session").map(nctIdOf), [
+      "NCT00000009",
+      "NCT00000002",
+    ]);
   } finally {
     database.close();
   }
@@ -117,12 +153,31 @@ test("migrates studies and sessions created by older schema versions", () => {
     );
     INSERT INTO search_sessions (session_id, search_params)
     VALUES ('legacy-session', '{"condition":"diabetes"}');
+    CREATE TABLE session_results (
+      session_id TEXT NOT NULL REFERENCES search_sessions(session_id) ON DELETE CASCADE,
+      nct_id TEXT NOT NULL REFERENCES studies(nct_id) ON DELETE CASCADE,
+      PRIMARY KEY (session_id, nct_id)
+    );
   `);
-  legacyDatabase
-    .prepare(
-      "INSERT INTO studies (nct_id, brief_title, raw_json) VALUES (?, ?, ?)",
-    )
-    .run("NCT00000009", "Legacy", JSON.stringify(legacyStudy));
+  const insertLegacyStudy = legacyDatabase.prepare(
+    "INSERT INTO studies (nct_id, brief_title, raw_json) VALUES (?, ?, ?)",
+  );
+  insertLegacyStudy.run("NCT00000009", "Legacy", JSON.stringify(legacyStudy));
+  insertLegacyStudy.run(
+    "NCT00000002",
+    "Second",
+    JSON.stringify({
+      protocolSection: {
+        identificationModule: { nctId: "NCT00000002", briefTitle: "Second" },
+      },
+    }),
+  );
+  // Older versions inserted session rows in API order, not NCT ID order.
+  const insertLegacyResult = legacyDatabase.prepare(
+    "INSERT INTO session_results (session_id, nct_id) VALUES ('legacy-session', ?)",
+  );
+  insertLegacyResult.run("NCT00000009");
+  insertLegacyResult.run("NCT00000002");
   legacyDatabase.close();
 
   const migratedDatabase = new DatabaseManager(databasePath);
@@ -131,6 +186,10 @@ test("migrates studies and sessions created by older schema versions", () => {
     assert.ok(metadata);
     assert.deepEqual(metadata.searchParams, { condition: "diabetes" });
     assert.ok(Date.parse(metadata.expiresAt) > Date.now());
+    assert.deepEqual(
+      migratedDatabase.getSessionResults("legacy-session").map(nctIdOf),
+      ["NCT00000009", "NCT00000002"],
+    );
 
     migratedDatabase.upsertStudy({
       protocolSection: {
