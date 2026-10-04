@@ -255,6 +255,41 @@ test("a cache hit keeps newer stored studies and adds missing ones", async () =>
   });
 });
 
+test("reports a cut-off single-page search", async () => {
+  await withStdioClient("modern", async (client, runtimeDirectory) => {
+    // Seed the disk cache so the search uses a first page with more pages
+    // left, without a network call. The params are the parsed tool input.
+    const params = { condition: "truncation-test", pageSize: 1000 };
+    const key = createHash("sha256")
+      .update(JSON.stringify(params))
+      .digest("hex");
+    const study = {
+      protocolSection: {
+        identificationModule: { nctId: "NCT00000002", briefTitle: "Page" },
+        statusModule: { overallStatus: "RECRUITING" },
+      },
+    };
+    fs.writeFileSync(
+      path.join(runtimeDirectory, "cache", `search:${key}.json`),
+      JSON.stringify({
+        data: { studies: [study], nextPageToken: "next", totalCount: 50_000 },
+        params,
+        timestamp: Date.now(),
+      }),
+    );
+
+    const result = await client.callTool({
+      name: "search_trials",
+      arguments: { condition: "truncation-test" },
+    });
+    assert.notEqual(result.isError, true);
+    assert.match(
+      JSON.stringify(result.content),
+      /Search found 1 of 50,000 studies \(first page only\)\. Set fetchAll to true/,
+    );
+  });
+});
+
 test("continues to serve legacy MCP clients", async () => {
   await withStdioClient("legacy", async (client) => {
     assert.equal(client.getProtocolEra(), "legacy");
