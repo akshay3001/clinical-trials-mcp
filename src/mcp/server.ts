@@ -55,6 +55,10 @@ const searchTrialsInputSchema = z
     phase: z
       .array(PhaseSchema)
       .min(1)
+      .max(PhaseSchema.options.length)
+      .refine((phases) => new Set(phases).size === phases.length, {
+        message: "Phase values must be unique",
+      })
       .optional()
       .describe(
         'Trial phases; a study matches if it has any listed phase (for example, ["PHASE2", "PHASE3"]). NA means no phase.',
