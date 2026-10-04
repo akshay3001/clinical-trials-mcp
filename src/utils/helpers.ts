@@ -372,7 +372,9 @@ export function formatStudySummary(
   if (interventions?.interventions && interventions.interventions.length > 0) {
     summary += `\n### Interventions\n\n`;
     for (const intervention of interventions.interventions) {
-      summary += `- **${intervention.type}:** ${intervention.name}`;
+      const { type, name } = intervention;
+      if (!type && !name) continue;
+      summary += `- ${[type && `**${type}:**`, name].filter(Boolean).join(" ")}`;
       if (intervention.description) {
         summary += `\n  ${intervention.description}`;
       }

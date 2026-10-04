@@ -331,6 +331,40 @@ test("rejects export symlink escapes and protects CSV consumers", async () => {
   assert.match(fs.readFileSync(destination, "utf8"), /'=HYPERLINK/);
 });
 
+test("omits a missing intervention type or name from the CSV", async () => {
+  const studyWithInterventions = (
+    nctId: string,
+    interventions: Array<{ type?: string; name?: string }>,
+  ) =>
+    ({
+      protocolSection: {
+        identificationModule: { nctId, briefTitle: nctId },
+        statusModule: { overallStatus: "RECRUITING" },
+        armsInterventionsModule: { interventions },
+      },
+    }) as Study;
+
+  const destination = await exportModule.exportToCSV(
+    [
+      studyWithInterventions("NCT00000021", [
+        { name: "Aspirin" },
+        { type: "DRUG" },
+        { type: "DEVICE", name: "Stent" },
+      ]),
+      studyWithInterventions("NCT00000022", [{}]),
+    ],
+    "interventions.csv",
+  );
+  const [, partial, empty] = fs
+    .readFileSync(destination, "utf8")
+    .trim()
+    .split(/\r?\n/);
+
+  assert.doesNotMatch(partial, /undefined/);
+  assert.match(partial, /,Aspirin; DRUG; DEVICE: Stent,/);
+  assert.match(empty, /^NCT00000022,(?:[^,]*,){7}BLANK,/);
+});
+
 test("compares refinement age bounds numerically across units", () => {
   const studyWithAges = (
     nctId: string,
