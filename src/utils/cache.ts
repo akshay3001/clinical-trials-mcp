@@ -6,6 +6,9 @@ import { SearchResponse } from "../models/types.js";
 const CACHE_DIR = "./cache";
 const MEMORY_CACHE_TTL_MS = 60 * 1000; // 1 minute
 const DISK_CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
+const MEMORY_CACHE_MAX_ENTRIES = 100;
+// `<prefix>:<hash>.json`: SHA-256 hex keys, and base36 keys from before them
+const ENTRY_FILE_PATTERN = /^\w+:[0-9a-z]+\.json$/;
 
 interface CacheEntry<T> {
   data: T;
@@ -77,18 +80,27 @@ export class CacheManager {
       return null;
     }
 
+    // Move the entry to the end, so the first key is the least recently used
+    this.memoryCache.delete(key);
+    this.memoryCache.set(key, entry);
     return entry.data as T;
   }
 
   /**
-   * Set in memory cache
+   * Set in memory cache, and evict the least recently used entry when full
    */
   private setInMemory<T>(key: string, params: object, data: T): void {
+    this.memoryCache.delete(key);
     this.memoryCache.set(key, {
       data,
       params,
       timestamp: Date.now(),
     });
+
+    if (this.memoryCache.size > MEMORY_CACHE_MAX_ENTRIES) {
+      const [oldestKey] = this.memoryCache.keys();
+      this.memoryCache.delete(oldestKey);
+    }
   }
 
   /**
@@ -206,7 +218,9 @@ export class CacheManager {
   }
 
   /**
-   * Clear expired cache entries
+   * Clear expired cache entries. Only entry files that match
+   * ENTRY_FILE_PATTERN are checked, so the raw `*.jsonl` response logs and
+   * files from other programs are kept. The server calls this at start.
    */
   clearExpired(): void {
     // Clear expired memory cache
@@ -221,6 +235,7 @@ export class CacheManager {
     // Clear expired disk cache
     const files = fs.readdirSync(this.cacheDir);
     for (const file of files) {
+      if (!ENTRY_FILE_PATTERN.test(file)) continue;
       const filePath = path.join(this.cacheDir, file);
 
       try {
@@ -229,11 +244,11 @@ export class CacheManager {
 
         const age = now - entry.timestamp;
         if (age > DISK_CACHE_TTL_MS) {
-          fs.unlinkSync(filePath);
+          fs.rmSync(filePath, { force: true });
         }
       } catch (error) {
         // Invalid file, delete it
-        fs.unlinkSync(filePath);
+        fs.rmSync(filePath, { force: true });
       }
     }
   }
