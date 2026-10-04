@@ -561,3 +561,32 @@ test("removes related rows when an upstream module disappears", () => {
     reopenedDatabase.close();
   }
 });
+
+test("matches PATIENT_REGISTRY by the patientRegistry flag", () => {
+  const studyWithDesign = (
+    nctId: string,
+    studyType: string,
+    patientRegistry?: boolean,
+  ) =>
+    ({
+      protocolSection: {
+        identificationModule: { nctId, briefTitle: nctId },
+        designModule: { studyType, patientRegistry },
+      },
+    }) as Study;
+  const studies = [
+    studyWithDesign("NCT00000001", "OBSERVATIONAL", true),
+    studyWithDesign("NCT00000002", "OBSERVATIONAL", false),
+    studyWithDesign("NCT00000003", "INTERVENTIONAL"),
+  ];
+  const matchingIds = (studyType: FilterParams["studyType"]) =>
+    helperModule
+      .filterStudies(studies, { studyType })
+      .map((study) => study.protocolSection.identificationModule.nctId);
+
+  assert.deepEqual(matchingIds("PATIENT_REGISTRY"), ["NCT00000001"]);
+  assert.deepEqual(matchingIds("OBSERVATIONAL"), [
+    "NCT00000001",
+    "NCT00000002",
+  ]);
+});

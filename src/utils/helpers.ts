@@ -193,8 +193,11 @@ export function filterStudies(
 
     // Phase 1 filters
 
-    // Filter by study type
-    if (filters.studyType) {
+    // Filter by study type. Upstream has no PATIENT_REGISTRY study type:
+    // registries are OBSERVATIONAL studies with patientRegistry set to true.
+    if (filters.studyType === "PATIENT_REGISTRY") {
+      if (protocol.designModule?.patientRegistry !== true) return false;
+    } else if (filters.studyType) {
       const studyType = protocol.designModule?.studyType?.toUpperCase();
       if (studyType !== filters.studyType.toUpperCase()) return false;
     }

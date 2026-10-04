@@ -204,7 +204,11 @@ const refineResultsInputSchema = z
       .boolean()
       .describe("Filter by whether results are posted")
       .optional(),
-    studyType: studyTypeSchema.describe("Filter by study type").optional(),
+    studyType: studyTypeSchema
+      .describe(
+        "Filter by study type. PATIENT_REGISTRY matches observational studies flagged as patient registries",
+      )
+      .optional(),
     sex: sexSchema.describe("Filter by eligible sex").optional(),
     healthyVolunteers: z
       .boolean()
