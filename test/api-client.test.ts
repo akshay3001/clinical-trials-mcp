@@ -156,12 +156,9 @@ test("fetchAll drops a study that repeats on a later page", async () => {
 });
 
 test("groups each query part so OR stays inside its own part", async () => {
-  let queryTerm: string | null = null;
+  let urlParams = new URLSearchParams();
   const server = createServer((request, response) => {
-    queryTerm = new URL(
-      request.url ?? "/",
-      "http://127.0.0.1",
-    ).searchParams.get("query.term");
+    urlParams = new URL(request.url ?? "/", "http://127.0.0.1").searchParams;
     response.setHeader("content-type", "application/json");
     response.end(JSON.stringify({ studies: [], totalCount: 0 }));
   });
@@ -179,12 +176,18 @@ test("groups each query part so OR stays inside its own part", async () => {
       condition: "diabetes OR obesity",
       location: "Boston",
       phase: ["PHASE2", "PHASE3"],
+      status: ["RECRUITING"],
       pageSize: 10,
+      pageToken: "next-page",
     });
-    assert.equal(
-      queryTerm,
-      "(heart OR lung) AND AREA[ConditionSearch](diabetes OR obesity) AND AREA[LocationSearch](Boston) AND AREA[Phase](PHASE2 OR PHASE3)",
-    );
+    assert.deepEqual(Object.fromEntries(urlParams), {
+      "query.term":
+        "(heart OR lung) AND AREA[ConditionSearch](diabetes OR obesity) AND AREA[LocationSearch](Boston) AND AREA[Phase](PHASE2 OR PHASE3)",
+      "filter.overallStatus": "RECRUITING",
+      pageSize: "10",
+      pageToken: "next-page",
+      countTotal: "true",
+    });
   } finally {
     await new Promise<void>((resolve, reject) =>
       server.close((error) => (error ? reject(error) : resolve())),
