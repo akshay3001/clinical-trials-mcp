@@ -134,7 +134,7 @@ const sponsorClassSchema = z.enum([
   "OTHER_GOV",
   "UNKNOWN",
 ]);
-const allocationSchema = z.enum(["RANDOMIZED", "NON_RANDOMIZED", "N_A"]);
+const allocationSchema = z.enum(["RANDOMIZED", "NON_RANDOMIZED", "NA"]);
 const interventionModelSchema = z.enum([
   "SINGLE_GROUP",
   "PARALLEL",
