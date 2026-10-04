@@ -449,3 +449,56 @@ test("treats one false FDA flag as not regulated and both missing as unknown", (
   assert.deepEqual(matchingIds(true), ["NCT00000001"]);
   assert.deepEqual(matchingIds(false), ["NCT00000002"]);
 });
+
+test("removes related rows when an upstream module disappears", () => {
+  const nctId = "NCT00000014";
+  const databasePath = path.join(runtimeDirectory, "stale", "studies.db");
+  const database = new DatabaseManager(databasePath);
+  try {
+    database.upsertStudy({
+      protocolSection: {
+        identificationModule: { nctId, briefTitle: "Full" },
+        statusModule: { overallStatus: "RECRUITING" },
+        conditionsModule: { conditions: ["Asthma"], keywords: ["lung"] },
+        armsInterventionsModule: {
+          interventions: [{ type: "DRUG", name: "Aspirin" }],
+        },
+        contactsLocationsModule: { locations: [{ facility: "Clinic" }] },
+        outcomesModule: {
+          primaryOutcomes: [{ measure: "Primary" }],
+          secondaryOutcomes: [{ measure: "Secondary" }],
+        },
+      },
+    } as Study);
+    database.upsertStudy({
+      protocolSection: {
+        identificationModule: { nctId, briefTitle: "Bare" },
+        statusModule: { overallStatus: "RECRUITING" },
+      },
+    } as Study);
+  } finally {
+    database.close();
+  }
+
+  const reopenedDatabase = new Database(databasePath, { readonly: true });
+  try {
+    for (const table of [
+      "conditions",
+      "keywords",
+      "interventions",
+      "locations",
+      "primary_outcomes",
+      "secondary_outcomes",
+    ]) {
+      assert.deepEqual(
+        reopenedDatabase
+          .prepare(`SELECT COUNT(*) AS count FROM ${table} WHERE nct_id = ?`)
+          .get(nctId),
+        { count: 0 },
+        table,
+      );
+    }
+  } finally {
+    reopenedDatabase.close();
+  }
+});
