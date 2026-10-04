@@ -501,12 +501,8 @@ export function createServer(): McpServer {
           ctx.mcpReq.signal.throwIfAborted();
           // A cached response can be older than a stored study, so a cache
           // hit only adds studies that are missing (session rows need them).
-          if (
-            !cachedResponse ||
-            !db.hasStudy(study.protocolSection.identificationModule.nctId)
-          ) {
-            db.upsertStudy(study);
-          }
+          if (cachedResponse) db.insertStudyIfMissing(study);
+          else db.upsertStudy(study);
           if ((index + 1) % 100 === 0) {
             await new Promise<void>((resolve) => setImmediate(resolve));
           }
