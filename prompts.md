@@ -214,7 +214,7 @@ Find Phase 3 pembrolizumab trials sponsored by Merck, filter to recruiting trial
 ### 20. Rare Disease Pediatric Trial Discovery
 ```
 Search for cystic fibrosis trials accepting children, then filter to:
-- Observational studies
+- Interventional studies
 - Accepting healthy volunteers
 - With treatment purpose
 - Show top 10 with detailed summary
@@ -222,7 +222,7 @@ Search for cystic fibrosis trials accepting children, then filter to:
 
 **Expected Flow:**
 - `search_trials`: condition="cystic fibrosis"
-- `refine_results`: sessionId="...", studyType="OBSERVATIONAL", ageGroups=["CHILD"], healthyVolunteers=true, primaryPurpose="TREATMENT"
+- `refine_results`: sessionId="...", studyType="INTERVENTIONAL", ageGroups=["CHILD"], healthyVolunteers=true, primaryPurpose="TREATMENT"
 - `summarize_session`: sessionId="...", maxResults=10
 
 ---
