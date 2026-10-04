@@ -391,3 +391,35 @@ test("shows and stores an enrollment count of 0", () => {
     reopenedDatabase.close();
   }
 });
+
+test("stores location coordinates of 0", () => {
+  const study = {
+    protocolSection: {
+      identificationModule: { nctId: "NCT00000013", briefTitle: "Equator" },
+      statusModule: { overallStatus: "RECRUITING" },
+      contactsLocationsModule: {
+        locations: [{ facility: "Null Island", geoPoint: { lat: 0, lon: 0 } }],
+      },
+    },
+  } as Study;
+
+  const databasePath = path.join(runtimeDirectory, "locations", "studies.db");
+  const database = new DatabaseManager(databasePath);
+  try {
+    database.upsertStudy(study);
+  } finally {
+    database.close();
+  }
+
+  const reopenedDatabase = new Database(databasePath, { readonly: true });
+  try {
+    assert.deepEqual(
+      reopenedDatabase
+        .prepare("SELECT latitude, longitude FROM locations WHERE nct_id = ?")
+        .get("NCT00000013"),
+      { latitude: 0, longitude: 0 },
+    );
+  } finally {
+    reopenedDatabase.close();
+  }
+});
