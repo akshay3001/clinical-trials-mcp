@@ -353,7 +353,7 @@ export function formatStudySummary(
     summary += `- **Phase:** ${design.phases.join(", ")}\n`;
   }
 
-  if (design?.enrollmentInfo?.count) {
+  if (design?.enrollmentInfo?.count !== undefined) {
     summary += `- **Enrollment:** ${design.enrollmentInfo.count} participants`;
     if (design.enrollmentInfo.type) {
       summary += ` (${design.enrollmentInfo.type})`;
@@ -530,7 +530,7 @@ export function formatStudyList(
       output += ` | Phase: ${design.phases.join(", ")}`;
     }
 
-    if (design?.enrollmentInfo?.count) {
+    if (design?.enrollmentInfo?.count !== undefined) {
       output += ` | Enrollment: ${design.enrollmentInfo.count}`;
     }
 
