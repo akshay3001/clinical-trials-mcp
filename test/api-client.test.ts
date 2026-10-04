@@ -65,7 +65,7 @@ test("bounds pagination and does not retry non-retryable HTTP failures", async (
     requestCount += 1;
     const url = new URL(request.url ?? "/", "http://127.0.0.1");
 
-    if (url.searchParams.get("query.term") === "fail") {
+    if (url.searchParams.get("query.term") === "(fail)") {
       response.writeHead(400).end("bad request");
       return;
     }
@@ -104,6 +104,42 @@ test("bounds pagination and does not retry non-retryable HTTP failures", async (
       /after 1 attempt: HTTP 400/,
     );
     assert.equal(requestCount, 2);
+  } finally {
+    await new Promise<void>((resolve, reject) =>
+      server.close((error) => (error ? reject(error) : resolve())),
+    );
+  }
+});
+
+test("groups each query part so OR stays inside its own part", async () => {
+  let queryTerm: string | null = null;
+  const server = createServer((request, response) => {
+    queryTerm = new URL(
+      request.url ?? "/",
+      "http://127.0.0.1",
+    ).searchParams.get("query.term");
+    response.setHeader("content-type", "application/json");
+    response.end(JSON.stringify({ studies: [], totalCount: 0 }));
+  });
+
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address();
+  assert.ok(address && typeof address !== "string");
+  const client = new ClinicalTrialsAPIClient(
+    `http://127.0.0.1:${address.port}`,
+  );
+
+  try {
+    await client.search({
+      query: "heart OR lung",
+      condition: "diabetes OR obesity",
+      location: "Boston",
+      pageSize: 10,
+    });
+    assert.equal(
+      queryTerm,
+      "(heart OR lung) AND AREA[ConditionSearch](diabetes OR obesity) AND AREA[LocationSearch](Boston)",
+    );
   } finally {
     await new Promise<void>((resolve, reject) =>
       server.close((error) => (error ? reject(error) : resolve())),
