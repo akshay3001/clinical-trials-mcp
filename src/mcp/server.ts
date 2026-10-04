@@ -446,7 +446,12 @@ export function createServer(): McpServer {
     async ({ fetchAll, fetchLimit, ...searchParamsInput }, ctx) => {
       try {
         ctx.mcpReq.signal.throwIfAborted();
-        const searchParams: SearchParams = searchParamsInput;
+        // Sort statuses so every order of the same list shares a cache key.
+        const searchParams: SearchParams = {
+          ...searchParamsInput,
+          status:
+            searchParamsInput.status && [...searchParamsInput.status].sort(),
+        };
         const cacheParams = fetchAll
           ? { ...searchParams, fetchAll, fetchLimit }
           : searchParams;
