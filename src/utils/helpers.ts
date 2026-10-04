@@ -97,7 +97,8 @@ export function filterStudies(
     const startDate = protocol.statusModule?.startDateStruct?.date;
 
     // Location fields match exactly, ignoring case, and one site must match
-    // every location field that is set.
+    // every location field set in this call. Separate refine calls do not
+    // share a site, because sessions do not keep earlier filters.
     const locationFilters = [
       ["country", filters.locationCountry],
       ["state", filters.locationState],

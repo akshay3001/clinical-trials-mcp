@@ -166,13 +166,13 @@ const refineResultsInputSchema = z
   .object({
     sessionId: sessionIdSchema,
     locationCountry: boundedText(
-      "Filter by country. Exact name, case-insensitive. With other location filters, one site must match all of them.",
+      "Filter by country. Exact name, case-insensitive. One site must match all location filters set in the same call.",
     ).optional(),
     locationState: boundedText(
-      "Filter by state or province. Exact name, case-insensitive. With other location filters, one site must match all of them.",
+      "Filter by state or province. Exact name, case-insensitive. One site must match all location filters set in the same call.",
     ).optional(),
     locationCity: boundedText(
-      "Filter by city. Exact name, case-insensitive. With other location filters, one site must match all of them.",
+      "Filter by city. Exact name, case-insensitive. One site must match all location filters set in the same call.",
     ).optional(),
     enrollmentMin: z
       .number()
