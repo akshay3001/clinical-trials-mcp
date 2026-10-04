@@ -549,11 +549,18 @@ export function createServer(): McpServer {
         db.createSession(sessionId, searchParams, nctIds);
         if (freshResponse) cache.set("search", cacheParams, freshResponse);
 
+        // A single-page search keeps nextPageToken, so the user can see that
+        // the session holds only the first page.
+        const page = freshResponse ?? cachedResponse;
+        const found = page?.nextPageToken
+          ? `${nctIds.length.toLocaleString("en-US")} of ${page.totalCount?.toLocaleString("en-US") ?? "more"} studies (first page only). Set fetchAll to true to fetch more pages`
+          : `${nctIds.length.toLocaleString("en-US")} ${nctIds.length === 1 ? "study" : "studies"}`;
+
         return {
           content: [
             {
               type: "text",
-              text: `Search found ${nctIds.length.toLocaleString("en-US")} ${nctIds.length === 1 ? "study" : "studies"}.\n**Session ID:** ${sessionId}\n\nUse this session ID to refine results, call summarize_session for study summaries, or export data.`,
+              text: `Search found ${found}.\n**Session ID:** ${sessionId}\n\nUse this session ID to refine results, call summarize_session for study summaries, or export data.`,
             },
           ],
         };

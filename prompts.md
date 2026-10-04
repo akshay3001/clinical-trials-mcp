@@ -224,7 +224,13 @@ Search for cystic fibrosis trials accepting children, then filter to:
 
 **Search:**
 ```
-Search found 1,000 studies.
+Search found 143 studies.
+**Session ID:** 550e8400-e29b-41d4-a716-446655440000
+```
+
+**Search With More Pages (no fetchAll):**
+```
+Search found 1,000 of 4,812 studies (first page only). Set fetchAll to true to fetch more pages.
 **Session ID:** 550e8400-e29b-41d4-a716-446655440000
 ```
 
