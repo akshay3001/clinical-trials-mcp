@@ -12,13 +12,34 @@ export const PhaseSchema = z.enum([
 
 export type Phase = z.infer<typeof PhaseSchema>;
 
+// Overall status values as the API stores them. The last six apply to
+// expanded access records.
+export const OverallStatusSchema = z.enum([
+  "NOT_YET_RECRUITING",
+  "RECRUITING",
+  "ENROLLING_BY_INVITATION",
+  "ACTIVE_NOT_RECRUITING",
+  "SUSPENDED",
+  "TERMINATED",
+  "COMPLETED",
+  "WITHDRAWN",
+  "UNKNOWN",
+  "AVAILABLE",
+  "NO_LONGER_AVAILABLE",
+  "TEMPORARILY_NOT_AVAILABLE",
+  "APPROVED_FOR_MARKETING",
+  "WITHHELD",
+]);
+
+export type OverallStatus = z.infer<typeof OverallStatusSchema>;
+
 // Search parameters schema
 export const SearchParamsSchema = z.object({
   query: z.string().optional(),
   condition: z.string().optional(),
   intervention: z.string().optional(),
   phase: z.array(PhaseSchema).min(1).optional(),
-  status: z.string().optional(),
+  status: z.array(OverallStatusSchema).min(1).optional(),
   location: z.string().optional(),
   sponsorSearch: z.string().optional(),
   enrollmentMin: z.number().optional(),

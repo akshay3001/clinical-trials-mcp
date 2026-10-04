@@ -11,6 +11,7 @@ import {
   type AdditionalExportColumn,
   type ExportFormat,
   type FilterParams,
+  OverallStatusSchema,
   PhaseSchema,
   type SearchParams,
   type SearchResponse,
@@ -63,10 +64,17 @@ const searchTrialsInputSchema = z
       .describe(
         'Trial phases; a study matches if it has any listed phase (for example, ["PHASE2", "PHASE3"]). NA means no phase.',
       ),
-    status: boundedText(
-      'Recruitment status, such as "Recruiting" or "Completed"',
-      200,
-    ).optional(),
+    status: z
+      .array(OverallStatusSchema)
+      .min(1)
+      .max(OverallStatusSchema.options.length)
+      .refine((statuses) => new Set(statuses).size === statuses.length, {
+        message: "Status values must be unique",
+      })
+      .optional()
+      .describe(
+        'Overall recruitment statuses; a study matches if it has any listed status (for example, ["RECRUITING", "ACTIVE_NOT_RECRUITING"])',
+      ),
     location: boundedText(
       "Geographic location (country, state, or city)",
     ).optional(),
