@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import fs from "fs";
 import path from "path";
 import { SearchResponse } from "../models/types.js";
@@ -8,11 +9,29 @@ const DISK_CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
 
 interface CacheEntry<T> {
   data: T;
+  // The params that produced this entry. `get` treats a mismatch as a miss.
+  params: unknown;
   timestamp: number;
 }
 
+/**
+ * Serialize a value as JSON with object keys sorted at every level, so equal
+ * params always give the same string.
+ */
+function canonicalJson(value: unknown): string {
+  return JSON.stringify(value, (_key, nested: unknown) =>
+    nested !== null && typeof nested === "object" && !Array.isArray(nested)
+      ? Object.fromEntries(
+          Object.entries(nested).sort(([a], [b]) =>
+            a < b ? -1 : a > b ? 1 : 0,
+          ),
+        )
+      : nested,
+  );
+}
+
 export class CacheManager {
-  private memoryCache: Map<string, CacheEntry<any>>;
+  private memoryCache: Map<string, CacheEntry<unknown>>;
   private cacheDir: string;
 
   constructor(cacheDir: string = CACHE_DIR) {
@@ -26,33 +45,29 @@ export class CacheManager {
   }
 
   /**
-   * Generate cache key from object
+   * Generate cache key from the SHA-256 of the canonical params JSON
    */
-  private generateKey(prefix: string, params: any): string {
-    const paramsStr = JSON.stringify(params, Object.keys(params).sort());
-    return `${prefix}:${this.hashString(paramsStr)}`;
+  private generateKey(prefix: string, params: object): string {
+    const hash = createHash("sha256")
+      .update(canonicalJson(params))
+      .digest("hex");
+    return `${prefix}:${hash}`;
   }
 
   /**
-   * Simple string hash function
+   * Check that a stored entry was made from the same params
    */
-  private hashString(str: string): string {
-    let hash = 0;
-    for (let i = 0; i < str.length; i++) {
-      const char = str.charCodeAt(i);
-      hash = (hash << 5) - hash + char;
-      hash = hash & hash; // Convert to 32-bit integer
-    }
-    return Math.abs(hash).toString(36);
+  private matchesParams(entry: CacheEntry<unknown>, params: object): boolean {
+    return canonicalJson(entry.params) === canonicalJson(params);
   }
 
   /**
    * Get from memory cache
    */
-  private getFromMemory<T>(key: string): T | null {
+  private getFromMemory<T>(key: string, params: object): T | null {
     const entry = this.memoryCache.get(key);
 
-    if (!entry) {
+    if (!entry || !this.matchesParams(entry, params)) {
       return null;
     }
 
@@ -62,15 +77,16 @@ export class CacheManager {
       return null;
     }
 
-    return entry.data;
+    return entry.data as T;
   }
 
   /**
    * Set in memory cache
    */
-  private setInMemory<T>(key: string, data: T): void {
+  private setInMemory<T>(key: string, params: object, data: T): void {
     this.memoryCache.set(key, {
       data,
+      params,
       timestamp: Date.now(),
     });
   }
@@ -85,7 +101,7 @@ export class CacheManager {
   /**
    * Get from disk cache
    */
-  private getFromDisk<T>(key: string): T | null {
+  private getFromDisk<T>(key: string, params: object): T | null {
     const filePath = this.getDiskCachePath(key);
 
     if (!fs.existsSync(filePath)) {
@@ -102,6 +118,11 @@ export class CacheManager {
         return null;
       }
 
+      // Entries without matching params (including the old format) are misses
+      if (!this.matchesParams(entry, params)) {
+        return null;
+      }
+
       return entry.data;
     } catch (error) {
       // Invalid cache file, delete it
@@ -113,10 +134,11 @@ export class CacheManager {
   /**
    * Set in disk cache
    */
-  private setOnDisk<T>(key: string, data: T): void {
+  private setOnDisk<T>(key: string, params: object, data: T): void {
     const filePath = this.getDiskCachePath(key);
     const entry: CacheEntry<T> = {
       data,
+      params,
       timestamp: Date.now(),
     };
 
@@ -126,20 +148,20 @@ export class CacheManager {
   /**
    * Get cached data (checks memory first, then disk)
    */
-  get<T>(prefix: string, params: any): T | null {
+  get<T>(prefix: string, params: object): T | null {
     const key = this.generateKey(prefix, params);
 
     // Try memory cache first
-    const memoryData = this.getFromMemory<T>(key);
+    const memoryData = this.getFromMemory<T>(key, params);
     if (memoryData) {
       return memoryData;
     }
 
     // Try disk cache
-    const diskData = this.getFromDisk<T>(key);
+    const diskData = this.getFromDisk<T>(key, params);
     if (diskData) {
       // Promote to memory cache
-      this.setInMemory(key, diskData);
+      this.setInMemory(key, params, diskData);
       return diskData;
     }
 
@@ -149,10 +171,10 @@ export class CacheManager {
   /**
    * Set cached data (sets both memory and disk)
    */
-  set<T>(prefix: string, params: any, data: T): void {
+  set<T>(prefix: string, params: object, data: T): void {
     const key = this.generateKey(prefix, params);
-    this.setInMemory(key, data);
-    this.setOnDisk(key, data);
+    this.setInMemory(key, params, data);
+    this.setOnDisk(key, params, data);
   }
 
   /**
