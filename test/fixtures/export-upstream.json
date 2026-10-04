@@ -1,0 +1,29 @@
+{
+  "protocolSection": {
+    "identificationModule": {
+      "nctId": "NCT00000022",
+      "briefTitle": "Export shape"
+    },
+    "statusModule": {
+      "overallStatus": "COMPLETED"
+    },
+    "designModule": {
+      "phases": [],
+      "enrollmentInfo": {
+        "count": 0
+      }
+    },
+    "oversightModule": {
+      "isFdaRegulatedDrug": false
+    },
+    "descriptionModule": {
+      "briefSummary": ""
+    }
+  },
+  "extra": {
+    "nullable": null,
+    "empty": [],
+    "zero": 0,
+    "enabled": false
+  }
+}

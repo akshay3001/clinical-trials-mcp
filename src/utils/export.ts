@@ -34,42 +34,6 @@ function sanitizeArray(
 }
 
 /**
- * Deep sanitization: recursively replace null, undefined, and empty strings with BLANK
- * Preserves 0, false, and other valid falsy values
- */
-function sanitizeDeep(value: unknown): unknown {
-  // Handle null, undefined, empty string
-  if (value === null || value === undefined || value === "") {
-    return BLANK_PLACEHOLDER;
-  }
-
-  // Preserve numbers (including 0) and booleans (including false)
-  if (typeof value === "number" || typeof value === "boolean") {
-    return value;
-  }
-
-  // Handle arrays - recurse into each element
-  if (Array.isArray(value)) {
-    if (value.length === 0) {
-      return BLANK_PLACEHOLDER;
-    }
-    return value.map((item) => sanitizeDeep(item));
-  }
-
-  // Handle objects - recurse into each property
-  if (typeof value === "object") {
-    const sanitized: Record<string, unknown> = {};
-    for (const [key, nestedValue] of Object.entries(value)) {
-      sanitized[key] = sanitizeDeep(nestedValue);
-    }
-    return sanitized;
-  }
-
-  // Return other primitive types (strings) as-is
-  return value;
-}
-
-/**
  * Return true when candidate is the root itself or one of its descendants.
  */
 function isWithinRoot(root: string, candidate: string): boolean {
@@ -375,8 +339,7 @@ export async function exportToJSON(
   outputPath: string,
 ): Promise<string> {
   const finalPath = getExportPath(outputPath, "json");
-  const sanitizedStudies = sanitizeDeep(studies);
-  const json = JSON.stringify(sanitizedStudies, null, 2);
+  const json = JSON.stringify(studies, null, 2);
   writeExportFile(finalPath, json);
   return finalPath;
 }
@@ -389,9 +352,7 @@ export async function exportToJSONL(
   outputPath: string,
 ): Promise<string> {
   const finalPath = getExportPath(outputPath, "jsonl");
-  const lines = studies
-    .map((study) => JSON.stringify(sanitizeDeep(study)))
-    .join("\n");
+  const lines = studies.map((study) => JSON.stringify(study)).join("\n");
   writeExportFile(finalPath, lines);
   return finalPath;
 }

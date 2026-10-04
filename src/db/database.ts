@@ -1,4 +1,5 @@
 import Database from "better-sqlite3";
+import { createHash } from "node:crypto";
 import { Study } from "../models/types.js";
 import path from "path";
 import fs from "fs";
@@ -97,6 +98,7 @@ export class DatabaseManager {
         is_fda_regulated_device BOOLEAN,
         age_groups TEXT,
         raw_json TEXT NOT NULL,
+        raw_json_upstream_hash TEXT,
         fetched_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
@@ -278,6 +280,7 @@ export class DatabaseManager {
       { name: "is_fda_regulated_drug", type: "BOOLEAN" },
       { name: "is_fda_regulated_device", type: "BOOLEAN" },
       { name: "age_groups", type: "TEXT" },
+      { name: "raw_json_upstream_hash", type: "TEXT" },
     ];
 
     for (const column of newColumns) {
@@ -475,7 +478,7 @@ export class DatabaseManager {
         lead_sponsor_name, lead_sponsor_class,
         allocation, intervention_model, primary_purpose, masking,
         is_fda_regulated_drug, is_fda_regulated_device, age_groups,
-        raw_json, updated_at
+        raw_json, raw_json_upstream_hash, updated_at
       ) VALUES (
         @nctId, @briefTitle, @officialTitle, @acronym,
         @overallStatus, @studyType, @phase,
@@ -488,7 +491,7 @@ export class DatabaseManager {
         @leadSponsorName, @leadSponsorClass,
         @allocation, @interventionModel, @primaryPurpose, @masking,
         @isFdaRegulatedDrug, @isFdaRegulatedDevice, @ageGroups,
-        @rawJson, CURRENT_TIMESTAMP
+        @rawJson, @rawJsonUpstreamHash, CURRENT_TIMESTAMP
       ) ON CONFLICT(nct_id) DO UPDATE SET
         brief_title = @briefTitle,
         official_title = @officialTitle,
@@ -521,9 +524,11 @@ export class DatabaseManager {
         is_fda_regulated_device = @isFdaRegulatedDevice,
         age_groups = @ageGroups,
         raw_json = @rawJson,
+        raw_json_upstream_hash = @rawJsonUpstreamHash,
         updated_at = CURRENT_TIMESTAMP
     `);
 
+    const rawJson = JSON.stringify(study);
     stmt.run({
       nctId: identification.nctId,
       briefTitle: identification.briefTitle,
@@ -556,7 +561,8 @@ export class DatabaseManager {
       isFdaRegulatedDrug: toSqliteBoolean(oversight?.isFdaRegulatedDrug),
       isFdaRegulatedDevice: toSqliteBoolean(oversight?.isFdaRegulatedDevice),
       ageGroups,
-      rawJson: JSON.stringify(study),
+      rawJson,
+      rawJsonUpstreamHash: createHash("sha256").update(rawJson).digest("hex"),
     });
 
     const nctId = identification.nctId;
@@ -789,21 +795,38 @@ export class DatabaseManager {
   /**
    * Get session results in the stored order (API relevance order).
    */
-  getSessionResults(sessionId: string): Study[] {
+  getSessionResults(sessionId: string, requireUpstreamShape = false): Study[] {
     if (!this.touchSession(sessionId)) {
       return [];
     }
 
     // Get studies
     const stmt = this.db.prepare(`
-      SELECT s.raw_json 
+      SELECT s.raw_json, s.raw_json_upstream_hash
       FROM studies s
       INNER JOIN session_results sr ON s.nct_id = sr.nct_id
       WHERE sr.session_id = ?
       ORDER BY sr.position
     `);
 
-    const rows = stmt.all(sessionId) as { raw_json: string }[];
+    const rows = stmt.all(sessionId) as {
+      raw_json: string;
+      raw_json_upstream_hash: string | null;
+    }[];
+    // Bind upstream provenance to the payload: an older writer can replace
+    // raw_json without updating columns it does not know.
+    if (
+      requireUpstreamShape &&
+      rows.some(
+        (row) =>
+          row.raw_json_upstream_hash !==
+          createHash("sha256").update(row.raw_json).digest("hex"),
+      )
+    ) {
+      throw new Error(
+        "Stored studies contain legacy defaults. Run search_trials again before exporting JSON or JSONL.",
+      );
+    }
     return rows.map((row) => JSON.parse(row.raw_json));
   }
 

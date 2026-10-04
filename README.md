@@ -79,9 +79,14 @@ The SQLite database includes full-text search indexes on:
 
 Export in multiple formats:
 
-- **CSV**: Ready for Excel/Google Sheets with key columns
-- **JSON**: Full nested structure preserved
-- **JSONL**: One study per line for streaming/processing
+- **CSV**: Ready for Excel/Google Sheets with key columns; absent values use `BLANK`
+- **JSON**: Stored upstream study shape, with missing fields, empty arrays, null, `0`, and `false` preserved
+- **JSONL**: The same upstream shape, one study per line for streaming/processing
+
+JSON and JSONL do not replace values with `"BLANK"`. Consumers that check for
+that placeholder must update. For studies stored by older versions, run
+`search_trials` again before a JSON or JSONL export. Old stored defaults cannot
+be distinguished from values sent by upstream.
 
 Exports are confined to `./exports` and never overwrite an existing file. Set
 `CLINICAL_TRIALS_EXPORTS_DIR` to choose a different allowed export root. Relative
