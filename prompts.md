@@ -1,6 +1,6 @@
 # Test Prompts for Clinical Trials MCP Server
 
-## Phase 1 - Simple Filters (DB Columns)
+## Phase 1 - Simple Filters (In-Memory)
 
 ### 1. Study Type Filter
 ```
@@ -67,7 +67,7 @@ Show me cancer trials that a 70-year-old patient can join, with crossover design
 
 ### 7. Age Groups Array Matching
 ```
-Find pediatric and adult asthma trials with double-blind masking
+Find pediatric or adult asthma trials with double-blind masking
 ```
 
 **Expected Flow:**
@@ -101,16 +101,17 @@ Find triple-blind randomized trials for hypertension treatment
 Search for diabetes trials, then narrow to:
 1. Only recruiting studies with results posted
 2. Industry-sponsored interventional trials
-3. Randomized parallel design for adults only
+3. Randomized parallel design that includes adults
 4. Export final results to CSV
 ```
 
 **Expected Flow:**
-- `search_trials`: condition="diabetes"
+- `search_trials`: condition="diabetes", status=["RECRUITING"]
 - `refine_results`: sessionId="...", hasResults=true
 - `refine_results`: sessionId="...", sponsorClass="INDUSTRY", studyType="INTERVENTIONAL"
 - `refine_results`: sessionId="...", allocation="RANDOMIZED", interventionModel="PARALLEL", ageGroups=["ADULT"]
 - `export_results`: sessionId="...", format="csv", outputPath="diabetes_trials.csv"
+- Stop if a refinement leaves zero studies. Later refinements and export return an empty-session message.
 
 ### 11. Complex Location + Demographics
 ```
@@ -124,7 +125,7 @@ Find cancer trials in New York for a 55-year-old female patient, accepting healt
 ### 12. Study Design Deep Dive
 ```
 Search for Phase 3 cardiac trials, then filter to:
-- FDA-regulated drug trials
+- FDA-regulated drug or device trials
 - Quadruple-blind randomized design
 - Enrollment between 100-500 participants
 - Summarize top 5 results
@@ -145,14 +146,20 @@ Search for Phase 3 cardiac trials, then filter to:
 Find interventional trials with single masking
 ```
 
-**Expected:** Should handle case-insensitive enum values (if implemented), or return validation error
+**Expected Flow:**
+- `search_trials`: query="trial"
+- `refine_results`: sessionId="...", studyType="interventional", masking="single"
+- Lowercase enum values return a validation error. Retry with studyType="INTERVENTIONAL", masking="SINGLE".
 
 ### 14. Empty Filter Result
 ```
-Search for diabetes trials, then filter to children (age 0-17) with quadruple-blind masking in Phase 4
+Search for Phase 4 diabetes trials, then filter to studies that include children with quadruple-blind masking
 ```
 
-**Expected:** Should return "Filtered from ... to 0 studies" gracefully (unlikely combination)
+**Expected Flow:**
+- `search_trials`: condition="diabetes", phase=["PHASE4"]
+- `refine_results`: sessionId="...", ageGroups=["CHILD"], masking="QUADRUPLE"
+- Refinement accepts no phase filter. Set phase during search. A nonempty session can be refined to zero studies without an error.
 
 ### 15. Session Chaining
 ```
@@ -181,7 +188,7 @@ Search for diabetes trials in California twice in a row
 Search for cancer trials (likely >100 results), then apply multiple filters sequentially
 ```
 
-**Expected:** Each refinement should be <1s (SQLite indexed queries)
+**Expected:** Each refinement should be <1s (in-memory filtering of session studies)
 
 ### 18. Raw JSON Fallback Performance
 ```
@@ -196,7 +203,7 @@ Search for 500+ trials, then apply Phase 2 filters (allocation, interventionMode
 
 ### 19. Competitive Landscape Analysis
 ```
-Find all Phase 3 pembrolizumab trials sponsored by Merck, filter to recruiting trials with results, export to JSON
+Find Phase 3 pembrolizumab trials sponsored by Merck, filter to recruiting trials with results, export to JSON
 ```
 
 **Expected Flow:**
@@ -207,15 +214,15 @@ Find all Phase 3 pembrolizumab trials sponsored by Merck, filter to recruiting t
 ### 20. Rare Disease Pediatric Trial Discovery
 ```
 Search for cystic fibrosis trials accepting children, then filter to:
-- Observational or interventional studies
+- Observational studies
 - Accepting healthy volunteers
-- With treatment or prevention purpose
+- With treatment purpose
 - Show top 10 with detailed summary
 ```
 
 **Expected Flow:**
 - `search_trials`: condition="cystic fibrosis"
-- `refine_results`: sessionId="...", ageGroups=["CHILD"], healthyVolunteers=true, primaryPurpose="TREATMENT"
+- `refine_results`: sessionId="...", studyType="OBSERVATIONAL", ageGroups=["CHILD"], healthyVolunteers=true, primaryPurpose="TREATMENT"
 - `summarize_session`: sessionId="...", maxResults=10
 
 ---
@@ -257,13 +264,13 @@ Error: Session session_invalid_123 was not found.
 
 ## Filter Summary
 
-### Phase 1 - Simple Filters (4 filters)
+### Phase 1 - Simple Filters
 - `studyType` - Study classification
 - `sex` - Eligible sex
 - `healthyVolunteers` - Accepts healthy volunteers
 - `sponsorClass` - Sponsor type
 
-### Phase 2 - Moderate Filters (6 filters)
+### Phase 2 - Moderate Filters
 - `allocation` - Randomization type
 - `interventionModel` - Study design
 - `primaryPurpose` - Research intent
@@ -271,10 +278,10 @@ Error: Session session_invalid_123 was not found.
 - `maxAge` - Study maximum age is at most this age. Studies with no maximum age are excluded
 - `patientAge` - Study accepts a patient of this age. A missing study minimum or maximum age means no limit
 
-### Phase 3 - Complex Filters (5 filters)
+### Phase 3 - Complex Filters
 - `ageGroups` - Age categories (array)
 - `masking` - Blinding type
 - `fdaRegulated` - FDA regulation status
 - `keyword` - Keyword search
 
-**Total: 15 new filters + 11 existing filters = 26 total filter capabilities**
+Other refinement filters are defined by the `refine_results` input schema in `src/mcp/server.ts`.

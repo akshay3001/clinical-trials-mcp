@@ -23,14 +23,18 @@ MCP tool call -> API/cache -> SQLite upsert -> search session -> local refinemen
 - Build with `npm run build`.
 - Run the compiled stdio server with `npm run start:mcp`.
 - Use `npm run dev` for TypeScript watch mode.
-- Format source files with `npm run format`.
+- Format source and test files with `npm run format`.
 - Check formatting without changing files with `npx prettier --check "src/**/*.ts"`.
-- There is currently no automated test suite or lint script. `prompts.md` contains manual MCP scenarios; use relevant scenarios when behavior changes.
+- Run the automated test suite with `npm test`; it builds the server and runs `test/*.test.ts`.
+- Check test types with `npm run typecheck:test` and source/test formatting with `npm run format:check`.
+- There is no lint script. `prompts.md` contains manual MCP scenarios; use relevant scenarios when behavior changes.
 
 Before finishing a code change, run at minimum:
 
 ```bash
 npm run build
+npm test
+npm run typecheck:test
 npx prettier --check "src/**/*.ts"
 ```
 
@@ -71,7 +75,7 @@ If MCP behavior changed, also launch the compiled server or exercise the relevan
 - Build specialized searches with the API's `AREA[...]` syntax. Put each query part in parentheses, for example `AREA[ConditionSearch](x)`, and combine the parts with `AND`. Essie binds `AND` tighter than `OR`, so an ungrouped part changes the meaning of the query.
 - Send `filter.overallStatus` as a comma-separated list of API status enum values. Take status input as a list of those values, because a display label such as "Active, not recruiting" contains a comma.
 - API pages are limited to 1,000 studies. Preserve `pageToken` pagination and the distinction between a single page and `fetchAll`.
-- The API client retries failed requests up to three attempts with exponential delays.
+- The API client makes up to three attempts for network errors, timeouts, HTTP 429, and HTTP 5xx. Each attempt has its own timeout. Other HTTP errors are not retried. Delays are exponential unless HTTP 429 supplies a valid `Retry-After`, capped at 30 seconds. Caller abort stops retries.
 - A search checks the cache before the API, saves raw API responses, writes the returned studies, and then creates a session. A fresh API response upserts every study. A cache hit only inserts studies that are missing (`insertStudyIfMissing`), because a cached response can be older than a stored study; never upsert a stored study from the cache. Changes to search parameters must also account for cache-key identity and persisted session parameters.
 
 ### Storage and sessions
@@ -89,7 +93,7 @@ If MCP behavior changed, also launch the compiled server or exercise the relevan
 - CSV always contains the core columns; optional columns are defined by `AdditionalExportColumn` and `ADDITIONAL_COLUMN_EXTRACTORS`.
 - Adding a CSV column requires synchronized changes in the shared union type, extractor map, and MCP tool enum.
 - CSV serializers use the literal `BLANK` for absent values. JSON and JSONL preserve the upstream study shape from `studies.raw_json`, including missing fields, empty arrays, null, `0`, and `false`. Study schemas must not add defaults. Reject JSON/JSONL exports of legacy rows without a matching `raw_json_upstream_hash`; a fresh search replaces them. Use the `searchUpstream` cache namespace to exclude older responses with defaults.
-- A bare output filename is organized under `exports/<format>/`; an absolute path or a path containing directories is honored as supplied.
+- The export root is `CLINICAL_TRIALS_EXPORTS_DIR`, or `./exports` by default. A bare filename goes under `<root>/<format>/`. Relative paths with directories resolve under the root. Absolute paths are accepted only inside the root. Paths cannot escape through symlinks, and exports never overwrite existing files.
 
 ## Change recipes
 

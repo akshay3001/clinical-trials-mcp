@@ -41,7 +41,7 @@ Add to your `mcp.json`:
 - 🤖 **MCP Integration**: Connect AI assistants through MCP
 - 💾 **Smart Caching**: In-memory and disk caching to minimize API calls
 - 📊 **Flexible Export**: CSV, JSON, JSONL formats
-- 🗄️ **Local Database**: SQLite storage with full-text search
+- 🗄️ **Local Database**: SQLite storage for studies and sessions
 - 🔌 **Current MCP Protocol**: Modern `2026-07-28` with legacy compatibility
 
 ### Iterative Refinement
@@ -66,14 +66,6 @@ Filtered from 1,000 to 174 studies.
 - **Memory cache**: 1 minute TTL for instant repeated queries
 - **Disk cache**: 24 hour TTL for persistence
 - **Raw JSONL**: Complete API responses saved for debugging
-
-### Full-Text Search
-
-The SQLite database includes full-text search indexes on:
-
-- Study titles
-- Summaries
-- Detailed descriptions
 
 ### Data Export
 
@@ -100,7 +92,7 @@ Large paginated searches are bounded to 10,000 studies and 100 API pages. Set
 ## Architecture
 
 - **Core API Client**: Handles ClinicalTrials.gov API v2 communication
-- **Database Layer**: SQLite with normalized schema and full-text search
+- **Database Layer**: SQLite with normalized schema and search sessions
 - **Caching**: Two-tier caching (memory + disk) for performance
 - **MCP Server**: Model Context Protocol interface for AI assistants
 
