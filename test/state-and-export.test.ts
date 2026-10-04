@@ -423,3 +423,29 @@ test("stores location coordinates of 0", () => {
     reopenedDatabase.close();
   }
 });
+
+test("treats one false FDA flag as not regulated and both missing as unknown", () => {
+  const studyWithOversight = (
+    nctId: string,
+    oversightModule?: { isFdaRegulatedDrug?: boolean },
+  ) =>
+    ({
+      protocolSection: {
+        identificationModule: { nctId, briefTitle: nctId },
+        oversightModule,
+      },
+    }) as Study;
+  const studies = [
+    studyWithOversight("NCT00000001", { isFdaRegulatedDrug: true }),
+    studyWithOversight("NCT00000002", { isFdaRegulatedDrug: false }),
+    studyWithOversight("NCT00000003", {}),
+    studyWithOversight("NCT00000004"),
+  ];
+  const matchingIds = (fdaRegulated: boolean) =>
+    helperModule
+      .filterStudies(studies, { fdaRegulated })
+      .map((study) => study.protocolSection.identificationModule.nctId);
+
+  assert.deepEqual(matchingIds(true), ["NCT00000001"]);
+  assert.deepEqual(matchingIds(false), ["NCT00000002"]);
+});
