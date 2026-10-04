@@ -380,15 +380,15 @@ export function formatStudySummary(
   }
 
   // Interventions
-  if (interventions?.interventions && interventions.interventions.length > 0) {
+  const interventionItems = (interventions?.interventions ?? [])
+    .map(({ type, name, description }) => {
+      const label = [type && `**${type}:**`, name].filter(Boolean).join(" ");
+      return [label, description].filter(Boolean).join("\n  ");
+    })
+    .filter(Boolean);
+  if (interventionItems.length > 0) {
     summary += `\n### Interventions\n\n`;
-    for (const intervention of interventions.interventions) {
-      summary += `- **${intervention.type}:** ${intervention.name}`;
-      if (intervention.description) {
-        summary += `\n  ${intervention.description}`;
-      }
-      summary += "\n";
-    }
+    summary += interventionItems.map((item) => `- ${item}\n`).join("");
   }
 
   // Primary Outcomes

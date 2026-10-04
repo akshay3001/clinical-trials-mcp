@@ -325,7 +325,9 @@ export async function exportToCSV(
       CompletionDate: sanitizeValue(status.completionDateStruct?.date),
       Conditions: sanitizeArray(conditions?.conditions),
       Interventions: sanitizeArray(
-        interventions?.interventions?.map((i) => `${i.type}: ${i.name}`),
+        interventions?.interventions
+          ?.map((i) => [i.type, i.name].filter(Boolean).join(": "))
+          .filter(Boolean),
       ),
       PrimaryOutcomes: sanitizeArray(
         outcomes?.primaryOutcomes
