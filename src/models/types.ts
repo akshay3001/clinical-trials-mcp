@@ -481,10 +481,7 @@ export interface FilterParams {
   hasResults?: boolean;
   // Phase 1 filters
   studyType?:
-    | "INTERVENTIONAL"
-    | "OBSERVATIONAL"
-    | "EXPANDED_ACCESS"
-    | "PATIENT_REGISTRY";
+    "INTERVENTIONAL" | "OBSERVATIONAL" | "EXPANDED_ACCESS" | "PATIENT_REGISTRY";
   sex?: "ALL" | "MALE" | "FEMALE";
   healthyVolunteers?: boolean;
   sponsorClass?:
@@ -499,11 +496,7 @@ export interface FilterParams {
   // Phase 2 filters
   allocation?: "RANDOMIZED" | "NON_RANDOMIZED" | "N_A";
   interventionModel?:
-    | "SINGLE_GROUP"
-    | "PARALLEL"
-    | "CROSSOVER"
-    | "FACTORIAL"
-    | "SEQUENTIAL";
+    "SINGLE_GROUP" | "PARALLEL" | "CROSSOVER" | "FACTORIAL" | "SEQUENTIAL";
   primaryPurpose?:
     | "TREATMENT"
     | "PREVENTION"
