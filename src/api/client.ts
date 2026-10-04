@@ -101,10 +101,6 @@ export class ClinicalTrialsAPIClient {
       urlParams.set("pageToken", params.pageToken);
     }
 
-    if (params.fields && params.fields.length > 0) {
-      urlParams.set("fields", params.fields.join(","));
-    }
-
     urlParams.set("countTotal", "true");
 
     return urlParams;
@@ -243,29 +239,24 @@ export class ClinicalTrialsAPIClient {
    */
   async getStudy(
     nctId: string,
-    fields?: string[],
     options: APIRequestOptions = {},
   ): Promise<Study> {
-    const urlParams = new URLSearchParams();
-
-    if (fields && fields.length > 0) {
-      urlParams.set("fields", fields.join(","));
-    }
-
-    const url = `${this.baseUrl}/studies/${nctId}${fields ? `?${urlParams.toString()}` : ""}`;
+    const url = `${this.baseUrl}/studies/${nctId}`;
 
     const response = await this.fetchWithRetry(url, options);
-    const data = (await response.json()) as any;
+    const data: unknown = await response.json();
 
     // The v2 single-study endpoint returns the study directly. Retain support
     // for the older wrapped shape so cached fixtures and compatible mirrors do
     // not break.
     const rawStudy =
-      data && typeof data === "object" && "protocolSection" in data
-        ? data
-        : Array.isArray(data?.studies)
-          ? data.studies[0]
-          : undefined;
+      data && typeof data === "object"
+        ? "protocolSection" in data
+          ? data
+          : "studies" in data && Array.isArray(data.studies)
+            ? data.studies[0]
+            : undefined
+        : undefined;
 
     if (rawStudy) {
       const result = StudySchema.safeParse(rawStudy);

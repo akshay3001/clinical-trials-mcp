@@ -42,13 +42,8 @@ export const SearchParamsSchema = z.object({
   status: z.array(OverallStatusSchema).min(1).optional(),
   location: z.string().optional(),
   sponsorSearch: z.string().optional(),
-  enrollmentMin: z.number().optional(),
-  enrollmentMax: z.number().optional(),
-  startDateAfter: z.string().optional(),
-  startDateBefore: z.string().optional(),
   pageSize: z.number().min(1).max(1000).default(1000),
   pageToken: z.string().optional(),
-  fields: z.array(z.string()).optional(),
 });
 
 export type SearchParams = z.infer<typeof SearchParamsSchema>;

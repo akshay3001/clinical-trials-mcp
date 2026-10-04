@@ -620,7 +620,7 @@ export function createServer(): McpServer {
         let study = db.getStudy(nctId);
         if (!study) {
           study = await withApiPermit(ctx.mcpReq.signal, () =>
-            apiClient.getStudy(nctId, undefined, {
+            apiClient.getStudy(nctId, {
               signal: ctx.mcpReq.signal,
             }),
           );
