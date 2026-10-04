@@ -82,6 +82,7 @@ If MCP behavior changed, also launch the compiled server or exercise the relevan
 - Study writes use an upsert keyed by `nct_id`. When adding a persisted field, update table creation, migration/backfill, the upsert insert and conflict-update clauses, parameter extraction, indexes if appropriate, and any related filters/types.
 - Sessions store NCT IDs, not duplicate study payloads. Refinement must not make another upstream API request.
 - Preserve SQLite WAL mode, foreign-key enforcement, cascading relationships, and FTS synchronization.
+- One-time data migrations are gated by `PRAGMA user_version` and run in a transaction: version 1 rebuilds the FTS triggers and index, version 2 repairs the denormalized columns from `raw_json`. Give a new one-time migration the next version and run the migrations in version order.
 
 ### Exports
 
