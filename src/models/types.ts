@@ -522,7 +522,7 @@ export interface FilterParams {
     | "OTHER_GOV"
     | "UNKNOWN";
   // Phase 2 filters
-  allocation?: "RANDOMIZED" | "NON_RANDOMIZED" | "N_A";
+  allocation?: "RANDOMIZED" | "NON_RANDOMIZED" | "NA";
   interventionModel?:
     "SINGLE_GROUP" | "PARALLEL" | "CROSSOVER" | "FACTORIAL" | "SEQUENTIAL";
   primaryPurpose?:
