@@ -6,6 +6,16 @@ import fs from "fs";
 const DEFAULT_DB_PATH = "./data/clinical-trials.db";
 export const DEFAULT_SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
+// Tables that writeStudy rebuilds from the study's upstream modules.
+const RELATED_TABLES = [
+  "conditions",
+  "keywords",
+  "interventions",
+  "locations",
+  "primary_outcomes",
+  "secondary_outcomes",
+] as const;
+
 export interface SearchSessionMetadata {
   sessionId: string;
   searchParams: unknown;
@@ -479,13 +489,14 @@ export class DatabaseManager {
 
     const nctId = identification.nctId;
 
+    // Clear every related table first, so a module that is gone upstream
+    // leaves no old rows behind.
+    for (const table of RELATED_TABLES) {
+      this.db.prepare(`DELETE FROM ${table} WHERE nct_id = ?`).run(nctId);
+    }
+
     // Insert conditions
     if (conditions?.conditions) {
-      const deleteConditions = this.db.prepare(
-        "DELETE FROM conditions WHERE nct_id = ?",
-      );
-      deleteConditions.run(nctId);
-
       const insertCondition = this.db.prepare(
         "INSERT OR IGNORE INTO conditions (nct_id, condition) VALUES (?, ?)",
       );
@@ -497,11 +508,6 @@ export class DatabaseManager {
 
     // Insert keywords
     if (conditions?.keywords) {
-      const deleteKeywords = this.db.prepare(
-        "DELETE FROM keywords WHERE nct_id = ?",
-      );
-      deleteKeywords.run(nctId);
-
       const insertKeyword = this.db.prepare(
         "INSERT OR IGNORE INTO keywords (nct_id, keyword) VALUES (?, ?)",
       );
@@ -513,11 +519,6 @@ export class DatabaseManager {
 
     // Insert interventions
     if (interventions?.interventions) {
-      const deleteInterventions = this.db.prepare(
-        "DELETE FROM interventions WHERE nct_id = ?",
-      );
-      deleteInterventions.run(nctId);
-
       const insertIntervention = this.db.prepare(
         "INSERT OR IGNORE INTO interventions (nct_id, intervention_type, intervention_name, description) VALUES (?, ?, ?, ?)",
       );
@@ -531,11 +532,6 @@ export class DatabaseManager {
 
     // Insert locations
     if (locations?.locations) {
-      const deleteLocations = this.db.prepare(
-        "DELETE FROM locations WHERE nct_id = ?",
-      );
-      deleteLocations.run(nctId);
-
       const insertLocation = this.db.prepare(
         "INSERT OR IGNORE INTO locations (nct_id, facility, city, state, country, status, latitude, longitude) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
       );
@@ -558,11 +554,6 @@ export class DatabaseManager {
     // without one stay only in raw_json.
     const outcomes = protocol.outcomesModule;
     if (outcomes?.primaryOutcomes) {
-      const deletePrimary = this.db.prepare(
-        "DELETE FROM primary_outcomes WHERE nct_id = ?",
-      );
-      deletePrimary.run(nctId);
-
       const insertPrimary = this.db.prepare(
         "INSERT OR IGNORE INTO primary_outcomes (nct_id, measure, description, time_frame) VALUES (?, ?, ?, ?)",
       );
@@ -580,11 +571,6 @@ export class DatabaseManager {
 
     // Insert secondary outcomes
     if (outcomes?.secondaryOutcomes) {
-      const deleteSecondary = this.db.prepare(
-        "DELETE FROM secondary_outcomes WHERE nct_id = ?",
-      );
-      deleteSecondary.run(nctId);
-
       const insertSecondary = this.db.prepare(
         "INSERT OR IGNORE INTO secondary_outcomes (nct_id, measure, description, time_frame) VALUES (?, ?, ?, ?)",
       );
