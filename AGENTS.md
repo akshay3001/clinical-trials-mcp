@@ -38,7 +38,7 @@ npm run typecheck:test
 npx prettier --check "src/**/*.ts"
 ```
 
-If MCP behavior changed, also launch the compiled server or exercise the relevant scenario from `prompts.md`. State clearly when network-dependent behavior was not exercised.
+If MCP behavior changed, also launch the compiled server or exercise the relevant scenario from `prompts.md`. Start it from a temporary working directory, because `data/`, `cache/`, and `exports/` resolve from the working directory; never use the real `data/`. `npm run` always runs from the package root, so use `cd "$(mktemp -d)" && node <repo>/dist/mcp/server.js`. State clearly when network-dependent behavior was not exercised.
 
 ## Repository map
 
@@ -117,6 +117,15 @@ Be explicit about missing upstream data, case normalization, array matching sema
 ### Change the upstream study schema
 
 Update the Zod schema first, keep optional upstream modules optional, and verify both search responses and single-study details. If the field is persisted, filtered, or exported, follow the storage and export synchronization rules above.
+
+## Proof before merge
+
+A pull request body (or a PR comment) holds its evidence. Files in `/tmp` or other local paths are lost, so do not use them as the only record.
+
+- A bug fix shows the failing check on `main` and the same check passing on the branch.
+- A new or changed test must fail without the fix. Say how this was checked.
+- List the commands from "Runtime and commands" that ran, with their results, and the live MCP run if there was one.
+- A change with no behavior change (docs, dead-code removal) says why it has no new test.
 
 ## Working practices
 
