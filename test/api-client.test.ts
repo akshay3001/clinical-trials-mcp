@@ -450,10 +450,17 @@ test(
         { pageSize: 10 },
         { signal: controller.signal },
       );
-      // The client records the delay just before it starts the wait.
-      while (client.delays.length === 0) {
+      // The client records the delay just before it starts the wait. Stop
+      // early if the search ends without a retry, so the assertion fails.
+      let settled = false;
+      pending.then(
+        () => (settled = true),
+        () => (settled = true),
+      );
+      while (client.delays.length === 0 && !settled) {
         await new Promise((resolve) => setImmediate(resolve));
       }
+      assert.deepEqual(client.delays, [1000]);
       controller.abort(new Error("test cancellation"));
       await assert.rejects(pending, /test cancellation/);
       assert.equal(requestCount, 1);
