@@ -423,10 +423,11 @@ test("waits for Retry-After on a 429 instead of the exponential backoff", async 
   }
 });
 
-// A broken abort would wait the full minute, so the test timeout fails it.
+// A broken abort would wait the full 5s, so the 2s test timeout fails it. The
+// short wait also lets `npm test` exit soon after that failure.
 test(
   "stops the backoff wait at once on caller abort",
-  { timeout: 5_000 },
+  { timeout: 2_000 },
   async () => {
     let requestCount = 0;
     const server = createServer((_request, response) => {
@@ -441,7 +442,7 @@ test(
     assert.ok(address && typeof address !== "string");
     const client = new RecordingClient(
       `http://127.0.0.1:${address.port}`,
-      60_000,
+      5_000,
     );
     const controller = new AbortController();
 
