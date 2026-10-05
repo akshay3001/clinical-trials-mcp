@@ -375,12 +375,13 @@ test("gives each attempt its own timeout", async () => {
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   const address = server.address();
   assert.ok(address && typeof address !== "string");
-  const client = new RecordingClient(`http://127.0.0.1:${address.port}`, 100);
+  const client = new RecordingClient(`http://127.0.0.1:${address.port}`, 300);
 
   try {
-    // The two 100ms waits make the full run longer than timeoutMs.
+    // The two 300ms waits make the full run longer than timeoutMs. Each
+    // localhost request still has a wide 500ms margin on a slow runner.
     await assert.rejects(
-      client.search({ pageSize: 10 }, { timeoutMs: 150 }),
+      client.search({ pageSize: 10 }, { timeoutMs: 500 }),
       /after 3 attempts: HTTP 503/,
     );
     assert.equal(requestCount, 3);
