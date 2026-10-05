@@ -446,7 +446,7 @@ test("property: CSV round trip keeps values and protects cells", async (t) => {
 });
 
 test("property: export paths stay inside the root or reject", (t) => {
-  const temp = exportRoot(t);
+  const temp = fs.realpathSync(exportRoot(t));
   fs.mkdirSync(path.join(temp, "exports"));
   const root = fs.realpathSync(path.join(temp, "exports"));
   const outside = path.join(temp, "outside");
@@ -476,6 +476,7 @@ test("property: export paths stay inside the root or reject", (t) => {
     .array(segment, { minLength: 1, maxLength: 4 })
     .map((parts) => parts.join(path.sep));
   const outputPath = fc.oneof(
+    fc.constant(path.join(root, "linked")),
     relative,
     relative.map((p) => `${root}/${p}`),
     relative.map((p) => `${outside}/${p}`),
@@ -487,8 +488,10 @@ test("property: export paths stay inside the root or reject", (t) => {
       fc.constantFrom("csv", "json", "jsonl"),
       (output, format) => {
         // Each run starts with the same state, including when replaying a path.
-        fs.rmSync(root, { recursive: true, force: true });
+        fs.rmSync(temp, { recursive: true, force: true });
+        fs.mkdirSync(temp);
         fs.mkdirSync(root);
+        fs.mkdirSync(outside);
         fs.symlinkSync(outside, path.join(root, "linked"));
         let destination: string;
         try {
@@ -496,6 +499,9 @@ test("property: export paths stay inside the root or reject", (t) => {
         } catch (error) {
           assert.ok(error instanceof Error);
           return;
+        } finally {
+          assert.deepEqual(fs.readdirSync(outside), []);
+          assert.deepEqual(fs.readdirSync(temp).sort(), ["exports", "outside"]);
         }
         // Check outside the catch so a failed assertion cannot count as rejection.
         assert.ok(path.isAbsolute(destination));
@@ -510,6 +516,11 @@ test("property: export paths stay inside the root or reject", (t) => {
         assert.ok(
           parent === root || parent.startsWith(`${root}${path.sep}`),
           "parent must also be inside after symlink resolution",
+        );
+        assert.equal(
+          fs.lstatSync(destination, { throwIfNoEntry: false }),
+          undefined,
+          "destination must not already exist",
         );
       },
     ),
