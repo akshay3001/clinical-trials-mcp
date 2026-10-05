@@ -222,40 +222,43 @@ const study = fc.record(
   { requiredKeys: ["protocolSection"] },
 ) satisfies fc.Arbitrary<Study>;
 
-// Sparse filters keep some matches; the empty choice also exercises full output.
-const maybe = <T>(value: fc.Arbitrary<T>) =>
-  fc.option(value, { nil: undefined, freq: 8 });
-const filters = fc.oneof(
-  fc.constant({}),
-  fc.record({
-    locationCountry: maybe(text),
-    locationState: maybe(text),
-    locationCity: maybe(text),
-    enrollmentMin: maybe(count),
-    enrollmentMax: maybe(count),
-    startDateAfter: maybe(date),
-    startDateBefore: maybe(date),
-    interventionType: maybe(text),
-    hasResults: maybe(fc.boolean()),
-    studyType: maybe(studyType),
-    sex: maybe(sex),
-    healthyVolunteers: maybe(fc.boolean()),
-    sponsorClass: maybe(sponsorClass),
-    allocation: maybe(allocation),
-    interventionModel: maybe(model),
-    primaryPurpose: maybe(purpose),
-    minAge: maybe(age),
-    maxAge: maybe(age),
-    patientAge: maybe(age),
-    ageGroups: maybe(fc.array(ageGroup, { maxLength: 3 })),
-    masking: maybe(masking),
-    fdaRegulated: maybe(fc.boolean()),
-    keyword: maybe(text),
-  }),
-) satisfies fc.Arbitrary<FilterParams>;
+// Select at most two fields so active filters can keep part of a study list.
+const filters = fc
+  .uniqueArray(
+    fc.oneof(
+      fc.record({ locationCountry: text }),
+      fc.record({ locationState: text }),
+      fc.record({ locationCity: text }),
+      fc.record({ enrollmentMin: count }),
+      fc.record({ enrollmentMax: count }),
+      fc.record({ startDateAfter: date }),
+      fc.record({ startDateBefore: date }),
+      fc.record({ interventionType: text }),
+      fc.record({ hasResults: fc.boolean() }),
+      fc.record({ studyType }),
+      fc.record({ sex }),
+      fc.record({ healthyVolunteers: fc.boolean() }),
+      fc.record({ sponsorClass }),
+      fc.record({ allocation }),
+      fc.record({ interventionModel: model }),
+      fc.record({ primaryPurpose: purpose }),
+      fc.record({ minAge: age }),
+      fc.record({ maxAge: age }),
+      fc.record({ patientAge: age }),
+      fc.record({ ageGroups: fc.array(ageGroup, { maxLength: 3 }) }),
+      fc.record({ masking }),
+      fc.record({ fdaRegulated: fc.boolean() }),
+      fc.record({ keyword: text }),
+    ),
+    { maxLength: 2, selector: (part) => Object.keys(part)[0] },
+  )
+  .map((parts) =>
+    parts.reduce<FilterParams>((filter, part) => ({ ...filter, ...part }), {}),
+  );
 const studies = fc.array(study, { maxLength: 8 });
 
 test("property: refinement never adds a study", () => {
+  let partialResults = 0;
   fc.assert(
     fc.property(studies, filters, (input, filter) => {
       const before = JSON.stringify(input);
@@ -264,22 +267,30 @@ test("property: refinement never adds a study", () => {
       assert.ok(output.every((item) => members.has(item)));
       assert.ok(output.length <= input.length);
       assert.equal(JSON.stringify(input), before);
+      if (output.length > 0 && output.length < input.length) partialResults++;
     }),
     checks,
   );
+  if (!checks.path) {
+    assert.ok(
+      partialResults > 0,
+      "generator must reach partial refinement results",
+    );
+  }
 });
 
 test("property: refinement keeps order and cumulative results", () => {
+  let partialResults = 0;
   fc.assert(
-    fc.property(studies, filters, filters, (input, first, second) => {
-      const before: Study[] = [...input];
+    fc.property(studies, filters, filters, (input: Study[], first, second) => {
       const output = filterStudies(input, first);
       let cursor = 0;
       for (const item of output) {
-        const index = before.indexOf(item, cursor);
+        const index = input.indexOf(item, cursor);
         assert.ok(index >= cursor, "output must be a subsequence of input");
         cursor = index + 1;
       }
+      if (output.length > 0 && output.length < input.length) partialResults++;
       assert.deepEqual(
         filterStudies(output, second),
         filterStudies(filterStudies(input, second), first),
@@ -287,6 +298,12 @@ test("property: refinement keeps order and cumulative results", () => {
     }),
     checks,
   );
+  if (!checks.path) {
+    assert.ok(
+      partialResults > 0,
+      "generator must reach partial refinement results",
+    );
+  }
 });
 
 // The CSV contract treats empty strings and empty collections as absent.
@@ -430,11 +447,16 @@ test("property: CSV round trip keeps values and protects cells", async (t) => {
 
 test("property: export paths stay inside the root or reject", (t) => {
   const temp = exportRoot(t);
-  const root = path.join(temp, "exports");
+  fs.mkdirSync(path.join(temp, "exports"));
+  const root = fs.realpathSync(path.join(temp, "exports"));
   const outside = path.join(temp, "outside");
-  fs.mkdirSync(root);
   fs.mkdirSync(outside);
-  fs.symlinkSync(outside, path.join(root, "linked"));
+  assert.equal(
+    getExportPath("safe.csv", "csv"),
+    path.join(root, "csv", "safe.csv"),
+  );
+  const absolute = path.join(root, "nested", "safe.json");
+  assert.equal(getExportPath(absolute, "json"), absolute);
   const segment = fc.oneof(
     fc.constantFrom(
       "..",
@@ -464,6 +486,10 @@ test("property: export paths stay inside the root or reject", (t) => {
       outputPath,
       fc.constantFrom("csv", "json", "jsonl"),
       (output, format) => {
+        // Each run starts with the same state, including when replaying a path.
+        fs.rmSync(root, { recursive: true, force: true });
+        fs.mkdirSync(root);
+        fs.symlinkSync(outside, path.join(root, "linked"));
         let destination: string;
         try {
           destination = getExportPath(output, format);
@@ -473,7 +499,7 @@ test("property: export paths stay inside the root or reject", (t) => {
         }
         // Check outside the catch so a failed assertion cannot count as rejection.
         assert.ok(path.isAbsolute(destination));
-        const relative = path.relative(fs.realpathSync(root), destination);
+        const relative = path.relative(root, destination);
         assert.ok(
           relative !== "" &&
             relative !== ".." &&
