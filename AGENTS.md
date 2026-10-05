@@ -38,7 +38,7 @@ npm run typecheck:test
 npx prettier --check "src/**/*.ts"
 ```
 
-If MCP behavior changed, also launch the compiled server or exercise the relevant scenario from `prompts.md`. Start it from a temporary working directory, because `data/`, `cache/`, and `exports/` resolve from the working directory; never use the real `data/`. State clearly when network-dependent behavior was not exercised.
+If MCP behavior changed, also launch the compiled server or exercise the relevant scenario from `prompts.md`. Start it from a temporary working directory, because `data/`, `cache/`, and `exports/` resolve from the working directory; never use the real `data/`. `npm run` always runs from the package root, so use `cd "$(mktemp -d)" && node <repo>/dist/mcp/server.js`. State clearly when network-dependent behavior was not exercised.
 
 ## Repository map
 
