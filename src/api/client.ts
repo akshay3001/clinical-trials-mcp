@@ -172,7 +172,11 @@ export class ClinicalTrialsAPIClient {
     );
   }
 
-  private async waitForRetry(
+  /**
+   * Wait `delayMs` before the next attempt. A caller abort stops the wait at
+   * once. Protected so tests can record the chosen delay and wait less.
+   */
+  protected async waitForRetry(
     delayMs: number,
     signal?: AbortSignal,
   ): Promise<void> {

@@ -9,6 +9,28 @@ import {
   StudySchema,
 } from "../src/models/types.js";
 
+/**
+ * Client that records each backoff delay it picks, then waits `waitMs`
+ * instead, so retry tests do not sleep for real seconds.
+ */
+class RecordingClient extends ClinicalTrialsAPIClient {
+  readonly delays: number[] = [];
+  private readonly waitMs: number;
+
+  constructor(baseUrl: string, waitMs = 0) {
+    super(baseUrl);
+    this.waitMs = waitMs;
+  }
+
+  protected override waitForRetry(
+    delayMs: number,
+    signal?: AbortSignal,
+  ): Promise<void> {
+    this.delays.push(delayMs);
+    return super.waitForRetry(this.waitMs, signal);
+  }
+}
+
 const study = {
   protocolSection: {
     identificationModule: {
@@ -353,17 +375,16 @@ test("gives each attempt its own timeout", async () => {
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   const address = server.address();
   assert.ok(address && typeof address !== "string");
-  const client = new ClinicalTrialsAPIClient(
-    `http://127.0.0.1:${address.port}`,
-  );
+  const client = new RecordingClient(`http://127.0.0.1:${address.port}`, 100);
 
   try {
-    // Backoff waits are 1s and 2s, so the full run is longer than timeoutMs.
+    // The two 100ms waits make the full run longer than timeoutMs.
     await assert.rejects(
-      client.search({ pageSize: 10 }, { timeoutMs: 2_500 }),
+      client.search({ pageSize: 10 }, { timeoutMs: 150 }),
       /after 3 attempts: HTTP 503/,
     );
     assert.equal(requestCount, 3);
+    assert.deepEqual(client.delays, [1000, 2000]);
   } finally {
     await new Promise<void>((resolve, reject) =>
       server.close((error) => (error ? reject(error) : resolve())),
@@ -387,19 +408,58 @@ test("waits for Retry-After on a 429 instead of the exponential backoff", async 
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   const address = server.address();
   assert.ok(address && typeof address !== "string");
-  const client = new ClinicalTrialsAPIClient(
-    `http://127.0.0.1:${address.port}`,
-  );
+  const client = new RecordingClient(`http://127.0.0.1:${address.port}`);
 
   try {
-    // Exponential backoff would wait 1s + 2s. Both headers mean "now".
-    const start = Date.now();
+    // Exponential backoff would pick 1000 and 2000. Both headers mean "now".
     await client.search({ pageSize: 10 });
     assert.equal(requestCount, 3);
-    assert.ok(Date.now() - start < 900, `took ${Date.now() - start}ms`);
+    assert.deepEqual(client.delays, [0, 0]);
   } finally {
     await new Promise<void>((resolve, reject) =>
       server.close((error) => (error ? reject(error) : resolve())),
     );
   }
 });
+
+// A broken abort would wait the full minute, so the test timeout fails it.
+test(
+  "stops the backoff wait at once on caller abort",
+  { timeout: 5_000 },
+  async () => {
+    let requestCount = 0;
+    const server = createServer((_request, response) => {
+      requestCount += 1;
+      response.writeHead(503).end("unavailable");
+    });
+
+    await new Promise<void>((resolve) =>
+      server.listen(0, "127.0.0.1", resolve),
+    );
+    const address = server.address();
+    assert.ok(address && typeof address !== "string");
+    const client = new RecordingClient(
+      `http://127.0.0.1:${address.port}`,
+      60_000,
+    );
+    const controller = new AbortController();
+
+    try {
+      const pending = client.search(
+        { pageSize: 10 },
+        { signal: controller.signal },
+      );
+      // The client records the delay just before it starts the wait.
+      while (client.delays.length === 0) {
+        await new Promise((resolve) => setImmediate(resolve));
+      }
+      controller.abort(new Error("test cancellation"));
+      await assert.rejects(pending, /test cancellation/);
+      assert.equal(requestCount, 1);
+    } finally {
+      await new Promise<void>((resolve, reject) =>
+        server.close((error) => (error ? reject(error) : resolve())),
+      );
+    }
+  },
+);
