@@ -27,6 +27,7 @@ MCP tool call -> API/cache -> SQLite upsert -> search session -> local refinemen
 - Check formatting without changing files with `npx prettier --check "src/**/*.ts"`.
 - Run the automated test suite with `npm test`; it builds the server and runs `test/*.test.ts`.
 - Check test types with `npm run typecheck:test` and source/test formatting with `npm run format:check`.
+- Property tests live in `test/properties.test.ts` with a fixed seed and 200 runs. To replay a failure, use `FC_SEED=<seed> FC_PATH=<path> node --import tsx --test --test-name-pattern='<property name>' test/properties.test.ts` with the seed and path from fast-check.
 - There is no lint script. `prompts.md` contains manual MCP scenarios; use relevant scenarios when behavior changes.
 
 Before finishing a code change, run at minimum:
