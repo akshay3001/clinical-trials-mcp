@@ -116,3 +116,23 @@ test("raw response logging is off by default and enabled only by explicit opt-in
     else process.env.CLINICAL_TRIALS_MCP_LOG_RAW_RESPONSES = previous;
   }
 });
+
+test("keeps the original response timestamp when promoting disk entries to memory", () => {
+  const directory = path.join(runtimeDirectory, "response-age");
+  const writer = new CacheManager(directory);
+  writer.set("search", { query: "age" }, { studies: [] });
+  const file = path.join(directory, fs.readdirSync(directory)[0]);
+  const timestamp = Date.now() - 23 * 60 * 60 * 1000;
+  const entry = JSON.parse(fs.readFileSync(file, "utf8"));
+  fs.writeFileSync(file, JSON.stringify({ ...entry, timestamp }));
+  const reader = new CacheManager(directory);
+  // First read is from disk; the second is from memory.
+  for (let i = 0; i < 2; i++) {
+    assert.equal(
+      reader.getEntry<{ studies: unknown[] }>("search", { query: "age" })
+        ?.timestamp,
+      timestamp,
+    );
+    if (i === 0) fs.unlinkSync(file);
+  }
+});

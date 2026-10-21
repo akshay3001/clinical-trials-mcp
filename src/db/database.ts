@@ -435,20 +435,27 @@ export class DatabaseManager {
   /**
    * Insert a study and its related rows only if it is not stored yet. An
    * IMMEDIATE transaction takes the write lock before the check, so another
-   * process cannot store a newer copy between the check and the write.
+   * process cannot store a newer copy between the check and the write. Keep
+   * the cache fetch time so a restored study does not gain another day of freshness.
    */
-  insertStudyIfMissing(study: Study): void {
+  insertStudyIfMissing(study: Study, cachedAt: number): void {
     this.db
       .transaction(() => {
         const stored = this.db
           .prepare("SELECT 1 FROM studies WHERE nct_id = ?")
           .get(study.protocolSection.identificationModule.nctId);
-        if (!stored) this.writeStudy(study);
+        if (!stored) {
+          const updatedAt = new Date(cachedAt)
+            .toISOString()
+            .slice(0, 19)
+            .replace("T", " ");
+          this.writeStudy(study, updatedAt);
+        }
       })
       .immediate();
   }
 
-  private writeStudy(study: Study): void {
+  private writeStudy(study: Study, updatedAt?: string): void {
     const protocol = study.protocolSection;
     const identification = protocol.identificationModule;
     const status = protocol.statusModule;
@@ -491,7 +498,7 @@ export class DatabaseManager {
         @leadSponsorName, @leadSponsorClass,
         @allocation, @interventionModel, @primaryPurpose, @masking,
         @isFdaRegulatedDrug, @isFdaRegulatedDevice, @ageGroups,
-        @rawJson, @rawJsonUpstreamHash, CURRENT_TIMESTAMP
+        @rawJson, @rawJsonUpstreamHash, COALESCE(@updatedAt, CURRENT_TIMESTAMP)
       ) ON CONFLICT(nct_id) DO UPDATE SET
         brief_title = @briefTitle,
         official_title = @officialTitle,
@@ -525,11 +532,12 @@ export class DatabaseManager {
         age_groups = @ageGroups,
         raw_json = @rawJson,
         raw_json_upstream_hash = @rawJsonUpstreamHash,
-        updated_at = CURRENT_TIMESTAMP
+        updated_at = excluded.updated_at
     `);
 
     const rawJson = JSON.stringify(study);
     stmt.run({
+      updatedAt: updatedAt ?? null,
       nctId: identification.nctId,
       briefTitle: identification.briefTitle,
       officialTitle: identification.officialTitle || null,

@@ -472,7 +472,11 @@ export function createServer(): McpServer {
           : searchParams;
         // Old fetchAll entries contain synthetic totals. Leave them unused.
         const cachePrefix = fetchAll ? "searchAllV2" : "searchUpstream";
-        const cached = cache.get<SearchResponse>(cachePrefix, cacheParams);
+        const cachedEntry = cache.getEntry<SearchResponse>(
+          cachePrefix,
+          cacheParams,
+        );
+        const cached = cachedEntry?.data;
         // An entry cached before searchAll removed repeated NCT IDs can hold
         // fewer unique studies than fetchLimit, so it is fetched again.
         const cachedResponse =
@@ -528,7 +532,8 @@ export function createServer(): McpServer {
           ctx.mcpReq.signal.throwIfAborted();
           // A cached response can be older than a stored study, so a cache
           // hit only adds studies that are missing (session rows need them).
-          if (cachedResponse) db.insertStudyIfMissing(study);
+          if (cachedResponse && cachedEntry)
+            db.insertStudyIfMissing(study, cachedEntry.timestamp);
           else db.upsertStudy(study);
           if ((index + 1) % 100 === 0) {
             await new Promise<void>((resolve) => setImmediate(resolve));

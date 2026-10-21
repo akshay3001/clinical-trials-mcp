@@ -543,3 +543,48 @@ test(
     );
   },
 );
+
+test("restoring a missing study preserves its cache age on disk and memory hits", async () => {
+  await withStdioClient("modern", async (client, root) => {
+    const params = { pageSize: 1000, query: "restore-age" };
+    const key = createHash("sha256")
+      .update(JSON.stringify(params))
+      .digest("hex");
+    const timestamp = Date.now() - 23 * 60 * 60 * 1000;
+    const updatedAt = new Date(timestamp)
+      .toISOString()
+      .slice(0, 19)
+      .replace("T", " ");
+    fs.writeFileSync(
+      path.join(root, "cache", `searchUpstream:${key}.json`),
+      JSON.stringify({
+        params,
+        timestamp,
+        data: { studies: [detailStudy("Cached title")], totalCount: 1 },
+      }),
+    );
+    const database = new Database(
+      path.join(root, "data", "clinical-trials.db"),
+    );
+    try {
+      for (let i = 0; i < 2; i++) {
+        const result = await client.callTool({
+          name: "search_trials",
+          arguments: { query: "restore-age" },
+        });
+        assert.notEqual(result.isError, true);
+        assert.deepEqual(
+          database
+            .prepare("SELECT updated_at FROM studies WHERE nct_id = ?")
+            .get("NCT00000009"),
+          { updated_at: updatedAt },
+        );
+        database
+          .prepare("DELETE FROM studies WHERE nct_id = ?")
+          .run("NCT00000009");
+      }
+    } finally {
+      database.close();
+    }
+  });
+});
