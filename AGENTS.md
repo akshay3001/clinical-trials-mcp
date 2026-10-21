@@ -46,6 +46,10 @@ If MCP behavior changed, also launch the compiled server or exercise the relevan
 - `src/utils/cache.ts`: one-minute memory cache, 24-hour disk cache, and opt-in raw JSONL response log.
 - `src/utils/helpers.ts`: in-memory refinement filters and Markdown result formatting.
 - `src/utils/export.ts`: CSV, JSON, and JSONL serialization and output-path handling.
+- `test/unit/`: in-memory filter tests.
+- `test/integration/`: API client, cache, SQLite, and export tests.
+- `test/mcp/`: compiled stdio server tests using the MCP SDK client.
+- `test/helpers/`: shared helpers. `npm test` finds `*.test.ts` files recursively.
 - `prompts.md`: manual end-to-end MCP scenarios and expected flows.
 - `README.md`: concise user-facing installation and feature overview.
 - `dist/`, `data/`, `cache/`, and `exports/`: generated runtime artifacts; they are ignored and must not be committed.

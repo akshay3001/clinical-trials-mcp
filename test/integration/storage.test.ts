@@ -4,7 +4,7 @@ import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
-const root = fileURLToPath(new URL("../", import.meta.url));
+const root = fileURLToPath(new URL("../../", import.meta.url));
 
 test("src and dist use the package root from a different cwd without creating storage", () => {
   const env = { ...process.env };
@@ -12,7 +12,7 @@ test("src and dist use the package root from a different cwd without creating st
   delete env.CLINICAL_TRIALS_EXPORTS_DIR;
   for (const directory of ["src", "dist"]) {
     const module = new URL(
-      `../${directory}/utils/storage.${directory === "src" ? "ts" : "js"}`,
+      `../../${directory}/utils/storage.${directory === "src" ? "ts" : "js"}`,
       import.meta.url,
     ).href;
     const output = execFileSync(

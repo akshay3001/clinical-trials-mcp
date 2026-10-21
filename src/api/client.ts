@@ -379,4 +379,6 @@ export class ClinicalTrialsAPIClient {
 }
 
 // Export singleton instance
-export const apiClient = new ClinicalTrialsAPIClient();
+export const apiClient = new ClinicalTrialsAPIClient(
+  process.env.CLINICAL_TRIALS_API_BASE_URL,
+);

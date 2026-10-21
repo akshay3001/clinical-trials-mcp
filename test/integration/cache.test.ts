@@ -12,7 +12,7 @@ const runtimeDirectory = fs.mkdtempSync(
 process.chdir(runtimeDirectory);
 process.env.CLINICAL_TRIALS_MCP_DATA_DIR = runtimeDirectory;
 
-const { CacheManager } = await import("../src/utils/cache.js");
+const { CacheManager } = await import("../../src/utils/cache.js");
 
 test.after(() => {
   process.chdir(originalWorkingDirectory);
@@ -135,4 +135,102 @@ test("keeps the original response timestamp when promoting disk entries to memor
     );
     if (i === 0) fs.unlinkSync(file);
   }
+});
+
+test("memory expiry is inclusive at one minute and falls back to disk without renewing disk age", (t) => {
+  let now = 1_000_000;
+  t.mock.method(Date, "now", () => now);
+  const cacheDir = path.join(runtimeDirectory, "memory-expiry");
+  const manager = new CacheManager(cacheDir);
+  const params = { query: "clock" };
+  manager.set("search", params, "original");
+  const file = path.join(cacheDir, fs.readdirSync(cacheDir)[0]);
+  const originalDisk = fs.readFileSync(file, "utf8");
+  // A changed disk value shows which cache layer answered.
+  fs.writeFileSync(file, originalDisk.replace('"original"', '"disk"'));
+  now += 59_999;
+  assert.equal(manager.get("search", params), "original");
+  now += 1;
+  assert.equal(manager.get("search", params), "original");
+  now += 1;
+  assert.equal(manager.get("search", params), "disk");
+  assert.equal(
+    fs.readFileSync(file, "utf8"),
+    originalDisk.replace('"original"', '"disk"'),
+  );
+  fs.unlinkSync(file);
+  now += 60_000;
+  assert.equal(manager.get("search", params), "disk");
+  now += 1;
+  assert.equal(manager.get("search", params), null);
+});
+
+test("disk entries expire after 24 hours, including after earlier reads", (t) => {
+  const start = 1_000_000;
+  let now = start;
+  t.mock.method(Date, "now", () => now);
+  const cacheDir = path.join(runtimeDirectory, "disk-expiry");
+  const params = { query: "disk-clock" };
+  new CacheManager(cacheDir).set("search", params, ["record"]);
+  const file = path.join(cacheDir, fs.readdirSync(cacheDir)[0]);
+  const contents = fs.readFileSync(file, "utf8");
+  for (const age of [60_001, 86_399_999, 86_400_000]) {
+    now = start + age;
+    assert.deepEqual(new CacheManager(cacheDir).get("search", params), [
+      "record",
+    ]);
+    assert.equal(fs.readFileSync(file, "utf8"), contents);
+  }
+  now += 1;
+  assert.equal(new CacheManager(cacheDir).get("search", params), null);
+  assert.equal(fs.existsSync(file), false);
+});
+
+test("canonical object keys share an entry while pagination and fetch settings remain distinct", () => {
+  const cacheDir = path.join(runtimeDirectory, "identity");
+  const manager = new CacheManager(cacheDir);
+  const params = { query: "identity", pageSize: 10, nested: { a: 1, b: 2 } };
+  manager.set("search", params, ["original"]);
+  const reader = new CacheManager(cacheDir);
+  assert.deepEqual(
+    reader.get("search", {
+      nested: { b: 2, a: 1 },
+      pageSize: 10,
+      query: "identity",
+    }),
+    ["original"],
+  );
+  const variants = [
+    { ...params, pageSize: 20 },
+    { ...params, pageToken: "second" },
+    { ...params, fetchAll: true, fetchLimit: 10 },
+    { ...params, fetchAll: true, fetchLimit: 20 },
+  ];
+  for (const [index, variant] of variants.entries()) {
+    assert.equal(reader.get("search", variant), null);
+    manager.set("search", variant, [`variant ${index}`]);
+  }
+  const diskReader = new CacheManager(cacheDir);
+  for (const [index, variant] of variants.entries()) {
+    assert.deepEqual(diskReader.get("search", variant), [`variant ${index}`]);
+  }
+  assert.deepEqual(diskReader.get("search", params), ["original"]);
+  assert.equal(fs.readdirSync(cacheDir).length, 5);
+});
+
+test("disk promotion cannot keep a response past its original 24-hour expiry", (t) => {
+  const start = 1_000_000;
+  let now = start;
+  t.mock.method(Date, "now", () => now);
+  const cacheDir = path.join(runtimeDirectory, "promotion-expiry");
+  const params = { query: "promotion" };
+  const manager = new CacheManager(cacheDir);
+  manager.set("search", params, ["record"]);
+  now = start + 86_399_999;
+  assert.deepEqual(manager.get("search", params), ["record"]);
+  now += 1;
+  assert.deepEqual(manager.get("search", params), ["record"]);
+  now += 1;
+  assert.equal(manager.get("search", params), null);
+  assert.deepEqual(fs.readdirSync(cacheDir), []);
 });

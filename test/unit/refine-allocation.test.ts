@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import type { FilterParams, Study } from "../src/models/types.js";
-import { filterStudies } from "../src/utils/helpers.js";
+import type { FilterParams, Study } from "../../src/models/types.js";
+import { filterStudies } from "../../src/utils/helpers.js";
 
 test("matches upstream allocation values, including NA", () => {
   const studyWith = (nctId: string, allocation?: string) =>

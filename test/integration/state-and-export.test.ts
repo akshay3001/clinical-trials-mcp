@@ -5,7 +5,7 @@ import path from "node:path";
 import test from "node:test";
 
 import Database from "better-sqlite3";
-import type { FilterParams, Study } from "../src/models/types.js";
+import type { FilterParams, Study } from "../../src/models/types.js";
 
 const originalWorkingDirectory = process.cwd();
 const runtimeDirectory = fs.mkdtempSync(
@@ -16,9 +16,9 @@ process.env.CLINICAL_TRIALS_MCP_DATA_DIR = runtimeDirectory;
 
 const [{ DatabaseManager, db }, exportModule, helperModule] = await Promise.all(
   [
-    import("../src/db/database.js"),
-    import("../src/utils/export.js"),
-    import("../src/utils/helpers.js"),
+    import("../../src/db/database.js"),
+    import("../../src/utils/export.js"),
+    import("../../src/utils/helpers.js"),
   ],
 );
 
@@ -784,7 +784,7 @@ test("matches PATIENT_REGISTRY by the patientRegistry flag", () => {
 });
 
 test("exports upstream JSON shapes and keeps the main CSV bytes", async () => {
-  const { ClinicalTrialsAPIClient } = await import("../src/api/client.js");
+  const { ClinicalTrialsAPIClient } = await import("../../src/api/client.js");
   const fixturePath = path.join(originalWorkingDirectory, "test", "fixtures");
   const upstream: unknown = JSON.parse(
     fs.readFileSync(path.join(fixturePath, "export-upstream.json"), "utf8"),
