@@ -28,11 +28,31 @@ Add to your `mcp.json`:
   "mcpServers": {
     "clinical-trials": {
       "command": "node",
-      "args": ["/path/to/clinical-trials/dist/mcp/server.js"]
+      "args": ["/path/to/clinical-trials/dist/mcp/server.js"],
+      "env": {
+        "CLINICAL_TRIALS_MCP_DATA_DIR": "/absolute/path/to/clinical-trials-storage"
+      }
     }
   }
 }
 ```
+
+### Storage setup
+
+Without an override, the server stores SQLite data in `<package root>/data`,
+cache entries in `<package root>/cache`, and exports in `<package root>/exports`.
+The package root is the directory with `package.json`. These defaults work from
+any client working directory, including `/`.
+
+Set `CLINICAL_TRIALS_MCP_DATA_DIR` to a writable base directory, as shown above.
+The server creates `data/`, `cache/`, and `exports/` below it. An absolute path is
+recommended; a relative base resolves from the package root. Existing files are
+not moved or deleted. If you previously used another working directory, set the
+base to that directory to keep using its data.
+
+`CLINICAL_TRIALS_EXPORTS_DIR` still takes precedence for exports only. Use an
+absolute path for that setting too; relative export overrides resolve from the
+client working directory.
 
 ## Features
 
@@ -65,7 +85,12 @@ Filtered from 1,000 to 174 studies.
 
 - **Memory cache**: 1 minute TTL for instant repeated queries
 - **Disk cache**: 24 hour TTL for persistence
-- **Raw JSONL**: Complete API responses saved for debugging
+- **Raw JSONL**: Off by default. Set `CLINICAL_TRIALS_MCP_LOG_RAW_RESPONSES=true` to append search responses for debugging. Logs can be large and have no automatic retention limit.
+
+`get_trial_details` refreshes studies whose last successful API write is older
+than 24 hours. If the refresh fails, it returns the stored study with a warning
+and its UTC storage date. A failed request with no stored study returns an error.
+Session summaries and exports use stored data; they do not refresh studies.
 
 ### Data Export
 
@@ -80,14 +105,18 @@ that placeholder must update. For studies stored by older versions, run
 `search_trials` again before a JSON or JSONL export. Old stored defaults cannot
 be distinguished from values sent by upstream.
 
-Exports are confined to `./exports` and never overwrite an existing file. Set
+Exports are confined to the configured export root and never overwrite an existing file. Set
 `CLINICAL_TRIALS_EXPORTS_DIR` to choose a different allowed export root. Relative
 paths must remain beneath that root; absolute paths are accepted only when they
 already point inside it.
 
 Large paginated searches are bounded to 10,000 studies and 100 API pages. Set
 `fetchLimit` to a smaller total when using `fetchAll`; it cannot exceed
-`pageSize × 100`.
+`pageSize × 100`. A capped fetchAll reports the number stored and the upstream
+total, for example `2 of 50 studies (stopped at fetchLimit 2)`. Cache hits keep
+this warning. Narrow the search or raise `fetchLimit` within the 10,000-study
+maximum to retrieve more results. The warning describes the search response;
+sessions and exports contain only the studies retrieved.
 
 ## Architecture
 

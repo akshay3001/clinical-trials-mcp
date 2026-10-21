@@ -26,14 +26,32 @@ const expectedTools = [
 async function withStdioClient(
   mode: "modern" | "legacy",
   run: (client: Client, runtimeDirectory: string) => Promise<void>,
+  mockUpstream = false,
 ): Promise<void> {
   const runtimeDirectory = fs.mkdtempSync(
     path.join(os.tmpdir(), `clinical-trials-mcp-${mode}-`),
   );
   const transport = new StdioClientTransport({
     command: process.execPath,
-    args: [serverEntry],
-    cwd: runtimeDirectory,
+    args: mockUpstream
+      ? [
+          "--import",
+          import.meta.resolve("tsx"),
+          "--import",
+          path.join(projectRoot, "test/fixtures/upstream.ts"),
+          serverEntry,
+        ]
+      : [serverEntry],
+    env: {
+      ...Object.fromEntries(
+        Object.entries(process.env).filter(
+          (entry): entry is [string, string] => entry[1] !== undefined,
+        ),
+      ),
+      CLINICAL_TRIALS_MCP_DATA_DIR: runtimeDirectory,
+      CLINICAL_TRIALS_EXPORTS_DIR: path.join(runtimeDirectory, "exports"),
+    },
+    cwd: mockUpstream ? runtimeDirectory : "/",
     stderr: "pipe",
   });
   const client = new Client(
@@ -301,5 +319,272 @@ test("continues to serve legacy MCP clients", async () => {
       tools.map((tool) => tool.name),
       expectedTools,
     );
+  });
+});
+
+const detailStudy = (title: string) => ({
+  protocolSection: {
+    identificationModule: { nctId: "NCT00000009", briefTitle: title },
+    statusModule: { overallStatus: "RECRUITING" },
+  },
+});
+
+function setUpstream(root: string, body: unknown, status = 200): void {
+  fs.writeFileSync(
+    path.join(root, "upstream.json"),
+    JSON.stringify({ body, status }),
+  );
+}
+
+function seedDetails(root: string, updatedAt: string): void {
+  const database = new Database(path.join(root, "data", "clinical-trials.db"));
+  try {
+    database
+      .prepare(
+        "INSERT INTO studies (nct_id, brief_title, raw_json, updated_at, fetched_at) VALUES (?, ?, ?, ?, ?)",
+      )
+      .run(
+        "NCT00000009",
+        "Stored title",
+        JSON.stringify(detailStudy("Stored title")),
+        updatedAt,
+        "2000-01-01 00:00:00",
+      );
+  } finally {
+    database.close();
+  }
+}
+
+test("refreshes stale details using updated_at and reuses the refreshed study", async () => {
+  await withStdioClient(
+    "modern",
+    async (client, root) => {
+      seedDetails(root, "2001-01-01 00:00:00");
+      setUpstream(root, detailStudy("Fresh title"));
+      for (let i = 0; i < 2; i++) {
+        const result = await client.callTool({
+          name: "get_trial_details",
+          arguments: { nctId: "NCT00000009" },
+        });
+        assert.notEqual(result.isError, true);
+        assert.match(JSON.stringify(result.content), /Fresh title/);
+      }
+      assert.equal(
+        fs.readFileSync(path.join(root, "requests"), "utf8"),
+        "request\n",
+      );
+    },
+    true,
+  );
+});
+
+test("warns with the stored UTC date when refresh fails; missing details return the error", async () => {
+  await withStdioClient(
+    "modern",
+    async (client, root) => {
+      seedDetails(root, "2001-01-01 00:00:00");
+      setUpstream(root, {}, 400);
+      const stale = await client.callTool({
+        name: "get_trial_details",
+        arguments: { nctId: "NCT00000009" },
+      });
+      assert.notEqual(stale.isError, true);
+      assert.match(
+        JSON.stringify(stale.content),
+        /Warning: could not refresh from ClinicalTrials.gov; showing data stored 2001-01-01 00:00:00 UTC/,
+      );
+      assert.match(JSON.stringify(stale.content), /Stored title/);
+      const missing = await client.callTool({
+        name: "get_trial_details",
+        arguments: { nctId: "NCT00000008" },
+      });
+      assert.equal(missing.isError, true);
+      assert.match(JSON.stringify(missing.content), /HTTP 400/);
+    },
+    true,
+  );
+});
+
+test("keeps fresh updated_at details even when fetched_at is old", async () => {
+  await withStdioClient(
+    "modern",
+    async (client, root) => {
+      seedDetails(
+        root,
+        new Date().toISOString().slice(0, 19).replace("T", " "),
+      );
+      const result = await client.callTool({
+        name: "get_trial_details",
+        arguments: { nctId: "NCT00000009" },
+      });
+      assert.notEqual(result.isError, true);
+      assert.match(JSON.stringify(result.content), /Stored title/);
+      assert.equal(fs.existsSync(path.join(root, "requests")), false);
+    },
+    true,
+  );
+});
+
+test("replaces synthetic fetchAll totals and warns on fresh and cached capped searches", async () => {
+  await withStdioClient(
+    "modern",
+    async (client, root) => {
+      const params = {
+        condition: "cap-test",
+        fetchAll: true,
+        fetchLimit: 1,
+        pageSize: 1000,
+      };
+      const key = createHash("sha256")
+        .update(JSON.stringify(params))
+        .digest("hex");
+      fs.writeFileSync(
+        path.join(root, "cache", `searchUpstream:${key}.json`),
+        JSON.stringify({
+          params,
+          timestamp: Date.now(),
+          data: { studies: [detailStudy("Old cache")], totalCount: 1 },
+        }),
+      );
+      setUpstream(root, {
+        studies: [detailStudy("Fresh title")],
+        totalCount: 50,
+        nextPageToken: "next",
+      });
+      for (let i = 0; i < 2; i++) {
+        const result = await client.callTool({
+          name: "search_trials",
+          arguments: { condition: "cap-test", fetchAll: true, fetchLimit: 1 },
+        });
+        assert.notEqual(result.isError, true);
+        assert.match(
+          JSON.stringify(result.content),
+          /1 of 50 studies \(stopped at fetchLimit 1\)\. Raise fetchLimit or narrow the search/,
+        );
+        assert.doesNotMatch(JSON.stringify(result.content), /first page only/);
+      }
+      assert.equal(
+        fs.readFileSync(path.join(root, "requests"), "utf8"),
+        "request\n",
+      );
+    },
+    true,
+  );
+});
+
+test("a complete fetchAll keeps its total without a limit warning", async () => {
+  await withStdioClient(
+    "modern",
+    async (client, root) => {
+      setUpstream(root, { studies: [detailStudy("Complete")], totalCount: 1 });
+      const result = await client.callTool({
+        name: "search_trials",
+        arguments: { fetchAll: true, fetchLimit: 2 },
+      });
+      assert.notEqual(result.isError, true);
+      assert.match(JSON.stringify(result.content), /Search found 1 study/);
+      assert.doesNotMatch(JSON.stringify(result.content), /stopped|first page/);
+    },
+    true,
+  );
+});
+
+test(
+  "cancelling a stale detail refresh stops fetch and leaves the stored timestamp unchanged",
+  { timeout: 5000 },
+  async () => {
+    await withStdioClient(
+      "modern",
+      async (client, root) => {
+        seedDetails(root, "2001-01-01 00:00:00");
+        fs.writeFileSync(
+          path.join(root, "upstream.json"),
+          JSON.stringify({ body: detailStudy("Cancelled"), delayMs: 2000 }),
+        );
+        const controller = new AbortController();
+        const pending = client.callTool(
+          { name: "get_trial_details", arguments: { nctId: "NCT00000009" } },
+          { signal: controller.signal },
+        );
+        const rejected = assert.rejects(pending, /cancel/i);
+        const deadline = Date.now() + 2000;
+        while (
+          !fs.existsSync(path.join(root, "requests")) &&
+          Date.now() < deadline
+        ) {
+          await new Promise((resolve) => setTimeout(resolve, 10));
+        }
+        assert.ok(fs.existsSync(path.join(root, "requests")));
+        controller.abort(new Error("test cancellation"));
+        await rejected;
+        const abortDeadline = Date.now() + 2000;
+        while (
+          !fs.existsSync(path.join(root, "aborted")) &&
+          Date.now() < abortDeadline
+        ) {
+          await new Promise((resolve) => setTimeout(resolve, 10));
+        }
+        assert.ok(fs.existsSync(path.join(root, "aborted")));
+        const database = new Database(
+          path.join(root, "data", "clinical-trials.db"),
+        );
+        try {
+          assert.deepEqual(
+            database
+              .prepare("SELECT updated_at FROM studies WHERE nct_id = ?")
+              .get("NCT00000009"),
+            { updated_at: "2001-01-01 00:00:00" },
+          );
+        } finally {
+          database.close();
+        }
+      },
+      true,
+    );
+  },
+);
+
+test("restoring a missing study preserves its cache age on disk and memory hits", async () => {
+  await withStdioClient("modern", async (client, root) => {
+    const params = { pageSize: 1000, query: "restore-age" };
+    const key = createHash("sha256")
+      .update(JSON.stringify(params))
+      .digest("hex");
+    const timestamp = Date.now() - 23 * 60 * 60 * 1000;
+    const updatedAt = new Date(timestamp)
+      .toISOString()
+      .slice(0, 19)
+      .replace("T", " ");
+    fs.writeFileSync(
+      path.join(root, "cache", `searchUpstream:${key}.json`),
+      JSON.stringify({
+        params,
+        timestamp,
+        data: { studies: [detailStudy("Cached title")], totalCount: 1 },
+      }),
+    );
+    const database = new Database(
+      path.join(root, "data", "clinical-trials.db"),
+    );
+    try {
+      for (let i = 0; i < 2; i++) {
+        const result = await client.callTool({
+          name: "search_trials",
+          arguments: { query: "restore-age" },
+        });
+        assert.notEqual(result.isError, true);
+        assert.deepEqual(
+          database
+            .prepare("SELECT updated_at FROM studies WHERE nct_id = ?")
+            .get("NCT00000009"),
+          { updated_at: updatedAt },
+        );
+        database
+          .prepare("DELETE FROM studies WHERE nct_id = ?")
+          .run("NCT00000009");
+      }
+    } finally {
+      database.close();
+    }
   });
 });

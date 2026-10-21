@@ -24,21 +24,18 @@ MCP tool call -> API/cache -> SQLite upsert -> search session -> local refinemen
 - Run the compiled stdio server with `npm run start:mcp`.
 - Use `npm run dev` for TypeScript watch mode.
 - Format source and test files with `npm run format`.
-- Check formatting without changing files with `npx prettier --check "src/**/*.ts"`.
-- Run the automated test suite with `npm test`; it builds the server and runs `test/*.test.ts`.
-- Check test types with `npm run typecheck:test` and source/test formatting with `npm run format:check`.
-- There is no lint script. `prompts.md` contains manual MCP scenarios; use relevant scenarios when behavior changes.
+- Run tests with `npm test`, check test types with `npm run typecheck:test`, and check formatting with `npm run format:check`.
+- `prompts.md` contains manual MCP scenarios; use relevant scenarios when behavior changes.
 
 Before finishing a code change, run at minimum:
 
 ```bash
-npm run build
 npm test
 npm run typecheck:test
-npx prettier --check "src/**/*.ts"
+npm run format:check
 ```
 
-If MCP behavior changed, also launch the compiled server or exercise the relevant scenario from `prompts.md`. Start it from a temporary working directory, because `data/`, `cache/`, and `exports/` resolve from the working directory; never use the real `data/`. `npm run` always runs from the package root, so use `cd "$(mktemp -d)" && node <repo>/dist/mcp/server.js`. State clearly when network-dependent behavior was not exercised.
+If MCP behavior changed, also launch the compiled server or exercise the relevant scenario from `prompts.md`. Use temporary storage: `CLINICAL_TRIALS_MCP_DATA_DIR="$(mktemp -d)" node <repo>/dist/mcp/server.js`. The working directory does not isolate storage. State clearly when network-dependent behavior was not exercised.
 
 ## Repository map
 
@@ -46,7 +43,7 @@ If MCP behavior changed, also launch the compiled server or exercise the relevan
 - `src/api/client.ts`: ClinicalTrials.gov API v2 query construction, pagination, validation, and retries.
 - `src/db/database.ts`: SQLite schema, migrations, study upserts, FTS5, and search sessions.
 - `src/models/types.ts`: Zod schemas and shared TypeScript types.
-- `src/utils/cache.ts`: one-minute memory cache, 24-hour disk cache, and raw JSONL response log.
+- `src/utils/cache.ts`: one-minute memory cache, 24-hour disk cache, and opt-in raw JSONL response log.
 - `src/utils/helpers.ts`: in-memory refinement filters and Markdown result formatting.
 - `src/utils/export.ts`: CSV, JSON, and JSONL serialization and output-path handling.
 - `prompts.md`: manual end-to-end MCP scenarios and expected flows.
@@ -76,12 +73,15 @@ If MCP behavior changed, also launch the compiled server or exercise the relevan
 - Send `filter.overallStatus` as a comma-separated list of API status enum values. Take status input as a list of those values, because a display label such as "Active, not recruiting" contains a comma.
 - API pages are limited to 1,000 studies. Preserve `pageToken` pagination and the distinction between a single page and `fetchAll`.
 - The API client makes up to three attempts for network errors, timeouts, HTTP 429, and HTTP 5xx. Each attempt has its own timeout. Other HTTP errors are not retried. Delays are exponential unless HTTP 429 supplies a valid `Retry-After`, capped at 30 seconds. Caller abort stops retries.
-- A search checks the cache before the API, saves raw API responses, writes the returned studies, and then creates a session. A fresh API response upserts every study. A cache hit only inserts studies that are missing (`insertStudyIfMissing`), because a cached response can be older than a stored study; never upsert a stored study from the cache. Changes to search parameters must also account for cache-key identity and persisted session parameters.
+- A search checks the cache before the API, logs raw responses only when `CLINICAL_TRIALS_MCP_LOG_RAW_RESPONSES=true`, writes the returned studies, and then creates a session. A fresh API response upserts every study. A cache hit only inserts studies that are missing (`insertStudyIfMissing`) and preserves the cache entry timestamp as `updated_at`, because a cached response can be older than a stored study; never upsert a stored study from the cache. Changes to search parameters must also account for cache-key identity and persisted session parameters.
 
 ### Storage and sessions
 
 - `apiClient`, `db`, and `cache` are exported singleton instances. Import and reuse them; do not create competing instances in application code.
 - Importing the database and cache modules creates their runtime directories, and database initialization runs schema migration/backfill logic. Avoid importing these modules in tooling that is expected to be side-effect free.
+- Storage defaults to the package root in both src and dist, independent of the client cwd. `CLINICAL_TRIALS_MCP_DATA_DIR` sets the base for `data/`, `cache/`, and `exports/`; relative base paths resolve from the package root. Configure this variable before importing runtime singletons in tests, and use temporary directories. Do not move existing data automatically.
+- Details older than 24 hours use `updated_at` to trigger refresh. Failed refreshes can return stored data with a dated warning; cancellation must still stop the call.
+- FetchAll caches use `searchAllV2` to exclude older synthetic totals. Preserve upstream totals and show when `fetchLimit` cuts results. Session parameters currently exclude fetchAll/fetchLimit.
 - SQLite is the durable local store. `studies.raw_json` preserves the full upstream study while selected fields and related tables support filtering and export.
 - Study writes use an upsert keyed by `nct_id`. When adding a persisted field, update table creation, migration/backfill, the upsert insert and conflict-update clauses, parameter extraction, indexes if appropriate, and any related filters/types.
 - Sessions store NCT IDs, not duplicate study payloads. Refinement must not make another upstream API request.
@@ -93,7 +93,7 @@ If MCP behavior changed, also launch the compiled server or exercise the relevan
 - CSV always contains the core columns; optional columns are defined by `AdditionalExportColumn` and `ADDITIONAL_COLUMN_EXTRACTORS`.
 - Adding a CSV column requires synchronized changes in the shared union type, extractor map, and MCP tool enum.
 - CSV serializers use the literal `BLANK` for absent values. JSON and JSONL preserve the upstream study shape from `studies.raw_json`, including missing fields, empty arrays, null, `0`, and `false`. Study schemas must not add defaults. Reject JSON/JSONL exports of legacy rows without a matching `raw_json_upstream_hash`; a fresh search replaces them. Use the `searchUpstream` cache namespace to exclude older responses with defaults.
-- The export root is `CLINICAL_TRIALS_EXPORTS_DIR`, or `./exports` by default. A bare filename goes under `<root>/<format>/`. Relative paths with directories resolve under the root. Absolute paths are accepted only inside the root. Paths cannot escape through symlinks, and exports never overwrite existing files.
+- A bare output filename is organized under `<export root>/<format>/`. All paths must stay within the export root; exports never overwrite existing files. `CLINICAL_TRIALS_EXPORTS_DIR` overrides the export root.
 
 ## Change recipes
 

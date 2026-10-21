@@ -3,9 +3,9 @@ import fs from "fs";
 import path from "path";
 import { SearchResponse } from "../models/types.js";
 
-const CACHE_DIR = "./cache";
+import { getStoragePaths, STUDY_DATA_TTL_MS } from "./storage.js";
 const MEMORY_CACHE_TTL_MS = 60 * 1000; // 1 minute
-const DISK_CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
+const DISK_CACHE_TTL_MS = STUDY_DATA_TTL_MS;
 const MEMORY_CACHE_MAX_ENTRIES = 100;
 // `<prefix>:<hash>.json`: SHA-256 hex keys, and base36 keys from before them
 const ENTRY_FILE_PATTERN = /^\w+:[0-9a-z]+\.json$/;
@@ -34,10 +34,10 @@ function canonicalJson(value: unknown): string {
 }
 
 export class CacheManager {
-  private memoryCache: Map<string, CacheEntry<unknown>>;
+  private memoryCache: Map<string, CacheEntry<unknown> & { loadedAt: number }>;
   private cacheDir: string;
 
-  constructor(cacheDir: string = CACHE_DIR) {
+  constructor(cacheDir: string = getStoragePaths().cache) {
     this.memoryCache = new Map();
     this.cacheDir = cacheDir;
 
@@ -67,15 +67,18 @@ export class CacheManager {
   /**
    * Get from memory cache
    */
-  private getFromMemory<T>(key: string, params: object): T | null {
+  private getFromMemory<T>(key: string, params: object): CacheEntry<T> | null {
     const entry = this.memoryCache.get(key);
 
     if (!entry || !this.matchesParams(entry, params)) {
       return null;
     }
 
-    const age = Date.now() - entry.timestamp;
-    if (age > MEMORY_CACHE_TTL_MS) {
+    const age = Date.now() - entry.loadedAt;
+    if (
+      age > MEMORY_CACHE_TTL_MS ||
+      Date.now() - entry.timestamp > DISK_CACHE_TTL_MS
+    ) {
       this.memoryCache.delete(key);
       return null;
     }
@@ -83,18 +86,24 @@ export class CacheManager {
     // Move the entry to the end, so the first key is the least recently used
     this.memoryCache.delete(key);
     this.memoryCache.set(key, entry);
-    return entry.data as T;
+    return entry as CacheEntry<T>;
   }
 
   /**
    * Set in memory cache, and evict the least recently used entry when full
    */
-  private setInMemory<T>(key: string, params: object, data: T): void {
+  private setInMemory<T>(
+    key: string,
+    params: object,
+    data: T,
+    timestamp = Date.now(),
+  ): void {
     this.memoryCache.delete(key);
     this.memoryCache.set(key, {
       data,
       params,
-      timestamp: Date.now(),
+      timestamp,
+      loadedAt: Date.now(),
     });
 
     if (this.memoryCache.size > MEMORY_CACHE_MAX_ENTRIES) {
@@ -113,7 +122,7 @@ export class CacheManager {
   /**
    * Get from disk cache
    */
-  private getFromDisk<T>(key: string, params: object): T | null {
+  private getFromDisk<T>(key: string, params: object): CacheEntry<T> | null {
     const filePath = this.getDiskCachePath(key);
 
     if (!fs.existsSync(filePath)) {
@@ -135,7 +144,7 @@ export class CacheManager {
         return null;
       }
 
-      return entry.data;
+      return entry;
     } catch (error) {
       // Invalid cache file, delete it
       fs.unlinkSync(filePath);
@@ -161,6 +170,11 @@ export class CacheManager {
    * Get cached data (checks memory first, then disk)
    */
   get<T>(prefix: string, params: object): T | null {
+    return this.getEntry<T>(prefix, params)?.data ?? null;
+  }
+
+  /** Read the response with its original fetch time, including on memory hits. */
+  getEntry<T>(prefix: string, params: object): CacheEntry<T> | null {
     const key = this.generateKey(prefix, params);
 
     // Try memory cache first
@@ -173,7 +187,7 @@ export class CacheManager {
     const diskData = this.getFromDisk<T>(key, params);
     if (diskData) {
       // Promote to memory cache
-      this.setInMemory(key, params, diskData);
+      this.setInMemory(key, params, diskData.data, diskData.timestamp);
       return diskData;
     }
 
@@ -192,7 +206,8 @@ export class CacheManager {
   /**
    * Save raw API response to JSONL file
    */
-  saveRawResponse(response: SearchResponse, params: any): void {
+  saveRawResponse(response: SearchResponse, params: unknown): void {
+    if (process.env.CLINICAL_TRIALS_MCP_LOG_RAW_RESPONSES !== "true") return;
     const date = new Date().toISOString().split("T")[0]; // YYYY-MM-DD
     const jsonlPath = path.join(this.cacheDir, `raw-${date}.jsonl`);
 

@@ -4,7 +4,7 @@ import { Study } from "../models/types.js";
 import path from "path";
 import fs from "fs";
 
-const DEFAULT_DB_PATH = "./data/clinical-trials.db";
+import { getStoragePaths } from "../utils/storage.js";
 export const DEFAULT_SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
 // Tables that writeStudy rebuilds from the study's upstream modules.
@@ -36,7 +36,7 @@ export class DatabaseManager {
   private readonly sessionTtlMs: number;
 
   constructor(
-    dbPath: string = DEFAULT_DB_PATH,
+    dbPath: string = getStoragePaths().database,
     sessionTtlMs: number = DEFAULT_SESSION_TTL_MS,
   ) {
     if (!Number.isFinite(sessionTtlMs) || sessionTtlMs <= 0) {
@@ -435,20 +435,27 @@ export class DatabaseManager {
   /**
    * Insert a study and its related rows only if it is not stored yet. An
    * IMMEDIATE transaction takes the write lock before the check, so another
-   * process cannot store a newer copy between the check and the write.
+   * process cannot store a newer copy between the check and the write. Keep
+   * the cache fetch time so a restored study does not gain another day of freshness.
    */
-  insertStudyIfMissing(study: Study): void {
+  insertStudyIfMissing(study: Study, cachedAt: number): void {
     this.db
       .transaction(() => {
         const stored = this.db
           .prepare("SELECT 1 FROM studies WHERE nct_id = ?")
           .get(study.protocolSection.identificationModule.nctId);
-        if (!stored) this.writeStudy(study);
+        if (!stored) {
+          const updatedAt = new Date(cachedAt)
+            .toISOString()
+            .slice(0, 19)
+            .replace("T", " ");
+          this.writeStudy(study, updatedAt);
+        }
       })
       .immediate();
   }
 
-  private writeStudy(study: Study): void {
+  private writeStudy(study: Study, updatedAt?: string): void {
     const protocol = study.protocolSection;
     const identification = protocol.identificationModule;
     const status = protocol.statusModule;
@@ -491,7 +498,7 @@ export class DatabaseManager {
         @leadSponsorName, @leadSponsorClass,
         @allocation, @interventionModel, @primaryPurpose, @masking,
         @isFdaRegulatedDrug, @isFdaRegulatedDevice, @ageGroups,
-        @rawJson, @rawJsonUpstreamHash, CURRENT_TIMESTAMP
+        @rawJson, @rawJsonUpstreamHash, COALESCE(@updatedAt, CURRENT_TIMESTAMP)
       ) ON CONFLICT(nct_id) DO UPDATE SET
         brief_title = @briefTitle,
         official_title = @officialTitle,
@@ -525,11 +532,12 @@ export class DatabaseManager {
         age_groups = @ageGroups,
         raw_json = @rawJson,
         raw_json_upstream_hash = @rawJsonUpstreamHash,
-        updated_at = CURRENT_TIMESTAMP
+        updated_at = excluded.updated_at
     `);
 
     const rawJson = JSON.stringify(study);
     stmt.run({
+      updatedAt: updatedAt ?? null,
       nctId: identification.nctId,
       briefTitle: identification.briefTitle,
       officialTitle: identification.officialTitle || null,
@@ -669,16 +677,17 @@ export class DatabaseManager {
    * Get study by NCT ID
    */
   getStudy(nctId: string): Study | null {
-    const stmt = this.db.prepare(
-      "SELECT raw_json FROM studies WHERE nct_id = ?",
-    );
-    const row = stmt.get(nctId) as { raw_json: string } | undefined;
+    return this.getStoredStudy(nctId)?.study ?? null;
+  }
 
-    if (row) {
-      return JSON.parse(row.raw_json);
-    }
-
-    return null;
+  /** Return the stored payload and the time of its last successful API write. */
+  getStoredStudy(nctId: string): { study: Study; updatedAt: string } | null {
+    const row = this.db
+      .prepare("SELECT raw_json, updated_at FROM studies WHERE nct_id = ?")
+      .get(nctId) as { raw_json: string; updated_at: string } | undefined;
+    return row
+      ? { study: JSON.parse(row.raw_json), updatedAt: row.updated_at }
+      : null;
   }
 
   /**
