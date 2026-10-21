@@ -118,7 +118,8 @@ test("bounds pagination and does not retry non-retryable HTTP failures", async (
       batches.push(batch);
     }
     assert.equal(batches.length, 1);
-    assert.equal(batches[0]?.length, 1);
+    assert.equal(batches[0]?.totalCount, 20);
+    assert.equal(batches[0]?.studies.length, 1);
     assert.equal(requestCount, 1);
 
     await assert.rejects(
@@ -166,7 +167,9 @@ test("fetchAll drops a study that repeats on a later page", async () => {
     const nctIds: string[] = [];
     for await (const batch of client.searchAll({ pageSize: 2 })) {
       nctIds.push(
-        ...batch.map((s) => s.protocolSection.identificationModule.nctId),
+        ...batch.studies.map(
+          (s) => s.protocolSection.identificationModule.nctId,
+        ),
       );
     }
     assert.deepEqual(nctIds, ["NCT00000001", "NCT00000002", "NCT00000003"]);

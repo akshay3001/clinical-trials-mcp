@@ -3,8 +3,7 @@ import fs from "fs";
 import path from "path";
 import Papa from "papaparse";
 
-const EXPORTS_ROOT_ENV = "CLINICAL_TRIALS_EXPORTS_DIR";
-const DEFAULT_EXPORTS_DIR = "exports";
+import { getStoragePaths } from "./storage.js";
 const ALLOWED_EXPORT_FORMATS = new Set(["csv", "json", "jsonl"]);
 const CSV_FORMULA_PATTERN = /^[\s\uFEFF]*(?:[=+\-@]|[\t\r\n])/;
 const BLANK_PLACEHOLDER = "BLANK";
@@ -52,8 +51,7 @@ function isWithinRoot(root: string, candidate: string): boolean {
  * preventing paths below it from escaping through another symlink.
  */
 function getExportsRoot(): string {
-  const configuredRoot = process.env[EXPORTS_ROOT_ENV]?.trim();
-  const root = path.resolve(configuredRoot || DEFAULT_EXPORTS_DIR);
+  const root = getStoragePaths().exports;
 
   fs.mkdirSync(root, { recursive: true });
   const rootStats = fs.statSync(root);

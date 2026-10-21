@@ -285,3 +285,10 @@ Error: Session session_invalid_123 was not found.
 - `keyword` - Keyword search
 
 Other refinement filters are defined by the `refine_results` input schema in `src/mcp/server.ts`.
+
+## Launch checks
+
+- Start the compiled server from `/` with `CLINICAL_TRIALS_MCP_DATA_DIR` set to a new temporary directory. List tools, search, and export a result. Confirm all runtime files stay below that directory.
+- Call `search_trials` with condition="diabetes", fetchAll=true, pageSize=2, fetchLimit=2. Expect `2 of <upstream total> studies (stopped at fetchLimit 2)` and guidance to narrow the search or raise the limit. Repeat the same call and confirm the cache keeps the same warning. With fetchAll=false, keep the first-page-only warning.
+- Call `get_trial_details` for a stored study whose `updated_at` is older than 24 hours. Expect an API refresh. If the API fails, expect a first-line warning with the stored UTC date. If no study is stored, expect an error. Cancelled requests must stop.
+- Fresh searches must not create raw JSONL logs unless `CLINICAL_TRIALS_MCP_LOG_RAW_RESPONSES=true`.

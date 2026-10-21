@@ -12,6 +12,7 @@ const runtimeDirectory = fs.mkdtempSync(
   path.join(os.tmpdir(), "clinical-trials-state-test-"),
 );
 process.chdir(runtimeDirectory);
+process.env.CLINICAL_TRIALS_MCP_DATA_DIR = runtimeDirectory;
 
 const [{ DatabaseManager, db }, exportModule, helperModule] = await Promise.all(
   [

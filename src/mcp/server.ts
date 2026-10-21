@@ -6,6 +6,7 @@ import { pathToFileURL } from "node:url";
 import { z } from "zod/v4";
 import { apiClient } from "../api/client.js";
 import { db } from "../db/database.js";
+import { STUDY_DATA_TTL_MS } from "../utils/storage.js";
 import { cache } from "../utils/cache.js";
 import {
   type AdditionalExportColumn,
@@ -469,8 +470,9 @@ export function createServer(): McpServer {
         const cacheParams = fetchAll
           ? { ...searchParams, fetchAll, fetchLimit }
           : searchParams;
-        // Older search cache entries contain study defaults added by Zod.
-        const cached = cache.get<SearchResponse>("searchUpstream", cacheParams);
+        // Old fetchAll entries contain synthetic totals. Leave them unused.
+        const cachePrefix = fetchAll ? "searchAllV2" : "searchUpstream";
+        const cached = cache.get<SearchResponse>(cachePrefix, cacheParams);
         // An entry cached before searchAll removed repeated NCT IDs can hold
         // fewer unique studies than fetchLimit, so it is fetched again.
         const cachedResponse =
@@ -492,25 +494,22 @@ export function createServer(): McpServer {
             ? cachedResponse.studies.slice(0, fetchLimit)
             : cachedResponse.studies;
         } else if (fetchAll) {
-          studies = await withApiPermit(ctx.mcpReq.signal, async () => {
+          freshResponse = await withApiPermit(ctx.mcpReq.signal, async () => {
             const fetchedStudies: Study[] = [];
+            let totalCount: number | undefined;
             for await (const batch of apiClient.searchAll(searchParams, {
               signal: ctx.mcpReq.signal,
               maxResults: fetchLimit,
             })) {
               ctx.mcpReq.signal.throwIfAborted();
               const remaining = fetchLimit - fetchedStudies.length;
-              fetchedStudies.push(...batch.slice(0, remaining));
+              totalCount ??= batch.totalCount;
+              fetchedStudies.push(...batch.studies.slice(0, remaining));
               if (fetchedStudies.length >= fetchLimit) break;
             }
-            return fetchedStudies;
+            return { studies: fetchedStudies, totalCount };
           });
-
-          freshResponse = {
-            studies,
-            nextPageToken: undefined,
-            totalCount: studies.length,
-          };
+          studies = freshResponse.studies;
           cache.saveRawResponse(freshResponse, searchParams);
         } else {
           ctx.mcpReq.signal.throwIfAborted();
@@ -548,15 +547,20 @@ export function createServer(): McpServer {
           ),
         ];
         db.createSession(sessionId, searchParams, nctIds);
-        if (freshResponse)
-          cache.set("searchUpstream", cacheParams, freshResponse);
+        if (freshResponse) cache.set(cachePrefix, cacheParams, freshResponse);
 
         // A single-page search keeps nextPageToken, so the user can see that
         // the session holds only the first page.
         const page = freshResponse ?? cachedResponse;
-        const found = page?.nextPageToken
-          ? `${nctIds.length.toLocaleString("en-US")} of ${page.totalCount?.toLocaleString("en-US") ?? "more"} studies (first page only). Set fetchAll to true to fetch more pages`
-          : `${nctIds.length.toLocaleString("en-US")} ${nctIds.length === 1 ? "study" : "studies"}`;
+        const found =
+          fetchAll &&
+          nctIds.length >= fetchLimit &&
+          page?.totalCount !== undefined &&
+          page.totalCount > nctIds.length
+            ? `${nctIds.length.toLocaleString("en-US")} of ${page.totalCount.toLocaleString("en-US")} studies (stopped at fetchLimit ${fetchLimit.toLocaleString("en-US")}). Raise fetchLimit or narrow the search`
+            : !fetchAll && page?.nextPageToken
+              ? `${nctIds.length.toLocaleString("en-US")} of ${page.totalCount?.toLocaleString("en-US") ?? "more"} studies (first page only). Set fetchAll to true to fetch more pages`
+              : `${nctIds.length.toLocaleString("en-US")} ${nctIds.length === 1 ? "study" : "studies"}`;
 
         return {
           content: [
@@ -619,22 +623,42 @@ export function createServer(): McpServer {
     async ({ nctId, includeEligibility }, ctx) => {
       try {
         ctx.mcpReq.signal.throwIfAborted();
-        let study = db.getStudy(nctId);
-        if (!study) {
-          study = await withApiPermit(ctx.mcpReq.signal, () =>
-            apiClient.getStudy(nctId, {
-              signal: ctx.mcpReq.signal,
-            }),
-          );
+        const stored = db.getStoredStudy(nctId);
+        let study = stored?.study;
+        let warning = "";
+        const updatedAt = stored
+          ? Date.parse(`${stored.updatedAt.replace(" ", "T")}Z`)
+          : NaN;
+        if (
+          !study ||
+          !Number.isFinite(updatedAt) ||
+          Date.now() - updatedAt > STUDY_DATA_TTL_MS
+        ) {
+          let refreshed: Study | undefined;
+          try {
+            refreshed = await withApiPermit(ctx.mcpReq.signal, () =>
+              apiClient.getStudy(nctId, {
+                signal: ctx.mcpReq.signal,
+              }),
+            );
+          } catch (error) {
+            ctx.mcpReq.signal.throwIfAborted();
+            if (!stored) throw error;
+            warning = `Warning: could not refresh from ClinicalTrials.gov; showing data stored ${stored.updatedAt} UTC.\n\n`;
+          }
           ctx.mcpReq.signal.throwIfAborted();
-          db.upsertStudy(study);
+          if (refreshed) {
+            db.upsertStudy(refreshed);
+            study = refreshed;
+          }
         }
+        if (!study) throw new Error(`Study ${nctId} not found`);
 
         return {
           content: [
             {
               type: "text",
-              text: formatStudySummary(study, includeEligibility),
+              text: warning + formatStudySummary(study, includeEligibility),
             },
           ],
         };

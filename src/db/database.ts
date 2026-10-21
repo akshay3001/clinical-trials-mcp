@@ -4,7 +4,7 @@ import { Study } from "../models/types.js";
 import path from "path";
 import fs from "fs";
 
-const DEFAULT_DB_PATH = "./data/clinical-trials.db";
+import { getStoragePaths } from "../utils/storage.js";
 export const DEFAULT_SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
 // Tables that writeStudy rebuilds from the study's upstream modules.
@@ -36,7 +36,7 @@ export class DatabaseManager {
   private readonly sessionTtlMs: number;
 
   constructor(
-    dbPath: string = DEFAULT_DB_PATH,
+    dbPath: string = getStoragePaths().database,
     sessionTtlMs: number = DEFAULT_SESSION_TTL_MS,
   ) {
     if (!Number.isFinite(sessionTtlMs) || sessionTtlMs <= 0) {
@@ -669,16 +669,17 @@ export class DatabaseManager {
    * Get study by NCT ID
    */
   getStudy(nctId: string): Study | null {
-    const stmt = this.db.prepare(
-      "SELECT raw_json FROM studies WHERE nct_id = ?",
-    );
-    const row = stmt.get(nctId) as { raw_json: string } | undefined;
+    return this.getStoredStudy(nctId)?.study ?? null;
+  }
 
-    if (row) {
-      return JSON.parse(row.raw_json);
-    }
-
-    return null;
+  /** Return the stored payload and the time of its last successful API write. */
+  getStoredStudy(nctId: string): { study: Study; updatedAt: string } | null {
+    const row = this.db
+      .prepare("SELECT raw_json, updated_at FROM studies WHERE nct_id = ?")
+      .get(nctId) as { raw_json: string; updated_at: string } | undefined;
+    return row
+      ? { study: JSON.parse(row.raw_json), updatedAt: row.updated_at }
+      : null;
   }
 
   /**

@@ -3,9 +3,9 @@ import fs from "fs";
 import path from "path";
 import { SearchResponse } from "../models/types.js";
 
-const CACHE_DIR = "./cache";
+import { getStoragePaths, STUDY_DATA_TTL_MS } from "./storage.js";
 const MEMORY_CACHE_TTL_MS = 60 * 1000; // 1 minute
-const DISK_CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
+const DISK_CACHE_TTL_MS = STUDY_DATA_TTL_MS;
 const MEMORY_CACHE_MAX_ENTRIES = 100;
 // `<prefix>:<hash>.json`: SHA-256 hex keys, and base36 keys from before them
 const ENTRY_FILE_PATTERN = /^\w+:[0-9a-z]+\.json$/;
@@ -37,7 +37,7 @@ export class CacheManager {
   private memoryCache: Map<string, CacheEntry<unknown>>;
   private cacheDir: string;
 
-  constructor(cacheDir: string = CACHE_DIR) {
+  constructor(cacheDir: string = getStoragePaths().cache) {
     this.memoryCache = new Map();
     this.cacheDir = cacheDir;
 
@@ -192,7 +192,8 @@ export class CacheManager {
   /**
    * Save raw API response to JSONL file
    */
-  saveRawResponse(response: SearchResponse, params: any): void {
+  saveRawResponse(response: SearchResponse, params: unknown): void {
+    if (process.env.CLINICAL_TRIALS_MCP_LOG_RAW_RESPONSES !== "true") return;
     const date = new Date().toISOString().split("T")[0]; // YYYY-MM-DD
     const jsonlPath = path.join(this.cacheDir, `raw-${date}.jsonl`);
 

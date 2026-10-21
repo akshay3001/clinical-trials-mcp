@@ -8,8 +8,9 @@ const originalWorkingDirectory = process.cwd();
 const runtimeDirectory = fs.mkdtempSync(
   path.join(os.tmpdir(), "clinical-trials-cache-test-"),
 );
-// The cache module creates ./cache on import, so import it from a temp cwd.
+// Configure storage before the cache singleton is imported.
 process.chdir(runtimeDirectory);
+process.env.CLINICAL_TRIALS_MCP_DATA_DIR = runtimeDirectory;
 
 const { CacheManager } = await import("../src/utils/cache.js");
 
@@ -85,4 +86,33 @@ test("clearExpired removes expired entries and keeps other files", () => {
     "raw-2026-01-01.jsonl",
     freshFile,
   ]);
+});
+
+test("raw response logging is off by default and enabled only by explicit opt-in", () => {
+  const directory = path.join(runtimeDirectory, "raw-opt-in");
+  const manager = new CacheManager(directory);
+  const previous = process.env.CLINICAL_TRIALS_MCP_LOG_RAW_RESPONSES;
+  try {
+    delete process.env.CLINICAL_TRIALS_MCP_LOG_RAW_RESPONSES;
+    manager.saveRawResponse(
+      { studies: [], totalCount: 0 },
+      { query: "example" },
+    );
+    assert.deepEqual(fs.readdirSync(directory), []);
+    process.env.CLINICAL_TRIALS_MCP_LOG_RAW_RESPONSES = "true";
+    manager.saveRawResponse(
+      { studies: [], totalCount: 0 },
+      { query: "example" },
+    );
+    const [file] = fs.readdirSync(directory);
+    assert.match(file, /^raw-.*\.jsonl$/);
+    assert.deepEqual(
+      JSON.parse(fs.readFileSync(path.join(directory, file), "utf8")).response,
+      { studies: [], totalCount: 0 },
+    );
+  } finally {
+    if (previous === undefined)
+      delete process.env.CLINICAL_TRIALS_MCP_LOG_RAW_RESPONSES;
+    else process.env.CLINICAL_TRIALS_MCP_LOG_RAW_RESPONSES = previous;
+  }
 });

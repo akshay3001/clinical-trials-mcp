@@ -289,7 +289,7 @@ export class ClinicalTrialsAPIClient {
   async *searchAll(
     params: SearchParams,
     options: SearchAllOptions = {},
-  ): AsyncGenerator<Study[], void, unknown> {
+  ): AsyncGenerator<SearchResponse, void, unknown> {
     const maxPages = options.maxPages ?? DEFAULT_MAX_PAGES;
     const maxResults = options.maxResults;
 
@@ -335,7 +335,7 @@ export class ClinicalTrialsAPIClient {
       const studies =
         remaining === undefined ? newStudies : newStudies.slice(0, remaining);
 
-      yield studies;
+      yield { ...response, studies };
       resultsYielded += studies.length;
 
       nextPageToken = response.nextPageToken;
