@@ -1,13 +1,14 @@
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import test from "node:test";
+import { withHttpStub } from "../helpers/http-stub.js";
 
-import { ClinicalTrialsAPIClient } from "../src/api/client.js";
+import { ClinicalTrialsAPIClient } from "../../src/api/client.js";
 import {
   SearchParamsSchema,
   SearchResponseSchema,
   StudySchema,
-} from "../src/models/types.js";
+} from "../../src/models/types.js";
 
 /**
  * Client that records each backoff delay it picks, then waits `waitMs`
@@ -475,3 +476,137 @@ test(
     }
   },
 );
+// Keep real HTTP attempts; RecordingClient checks delays without waiting seconds.
+for (const failure of [429, 500, "connection"] as const) {
+  for (const recover of [true, false]) {
+    test(
+      `retries ${failure}: ${recover ? "recovers on third attempt" : "stops after three attempts"}`,
+      { timeout: 10_000 },
+      async () => {
+        let requests = 0;
+        await withHttpStub(
+          (_request, response) => {
+            requests += 1;
+            if (recover && requests === 3) {
+              response.end(JSON.stringify({ studies: [study] }));
+            } else if (failure === "connection") {
+              response.destroy();
+            } else {
+              response.writeHead(failure).end();
+            }
+          },
+          async (baseUrl) => {
+            const client = new RecordingClient(baseUrl);
+            const pending = client.search({
+              pageSize: 1,
+            });
+            if (recover) {
+              assert.deepEqual(
+                (await pending).studies.map(
+                  (s) => s.protocolSection.identificationModule.nctId,
+                ),
+                ["NCT00000001"],
+              );
+            } else {
+              await assert.rejects(
+                pending,
+                failure === "connection"
+                  ? /after 3 attempts: fetch failed/
+                  : new RegExp(`after 3 attempts: HTTP ${failure}`),
+              );
+            }
+            assert.equal(requests, 3);
+            assert.deepEqual(client.delays, [1000, 2000]);
+          },
+        );
+      },
+    );
+  }
+}
+
+for (const stalled of ["headers", "body"] as const) {
+  test(
+    `times out stalled ${stalled} and can make a later request`,
+    { timeout: 5_000 },
+    async () => {
+      let requests = 0;
+      let recover = false;
+      await withHttpStub(
+        (_request, response) => {
+          requests += 1;
+          if (recover) response.end(JSON.stringify({ studies: [study] }));
+          else if (stalled === "body") {
+            response.writeHead(200, { "content-type": "application/json" });
+            response.write('{"studies":[');
+          }
+        },
+        async (baseUrl) => {
+          const client = new RecordingClient(baseUrl);
+          await assert.rejects(
+            client.search({ pageSize: 1 }, { timeoutMs: 100 }),
+            stalled === "headers"
+              ? /after 3 attempts/
+              : { name: "TimeoutError" },
+          );
+          const expectedAttempts = stalled === "headers" ? 3 : 1;
+          assert.equal(requests, expectedAttempts);
+          recover = true;
+          assert.equal(
+            (await client.search({ pageSize: 1 })).studies.length,
+            1,
+          );
+          assert.equal(requests, expectedAttempts + 1);
+        },
+      );
+    },
+  );
+}
+
+for (const scenario of ["repeated token", "page cap"] as const) {
+  test(`rejects ${scenario} without requesting an extra page`, async () => {
+    const tokens: (string | null)[] = [];
+    await withHttpStub(
+      (request, response) => {
+        tokens.push(
+          new URL(request.url ?? "/", "http://localhost").searchParams.get(
+            "pageToken",
+          ),
+        );
+        response.end(
+          JSON.stringify({
+            studies: [study],
+            nextPageToken:
+              scenario === "repeated token" ? "same" : `page-${tokens.length}`,
+          }),
+        );
+      },
+      async (baseUrl) => {
+        const yielded: string[] = [];
+        await assert.rejects(
+          async () => {
+            for await (const batch of new ClinicalTrialsAPIClient(
+              baseUrl,
+            ).searchAll(
+              { pageSize: 1 },
+              { maxPages: scenario === "repeated token" ? 3 : 2 },
+            )) {
+              yielded.push(
+                ...batch.studies.map(
+                  (s) => s.protocolSection.identificationModule.nctId,
+                ),
+              );
+            }
+          },
+          scenario === "repeated token"
+            ? /repeated page token/
+            : /Pagination limit of 2 pages reached/,
+        );
+        assert.deepEqual(tokens, [
+          null,
+          scenario === "repeated token" ? "same" : "page-1",
+        ]);
+        assert.deepEqual(yielded, ["NCT00000001"]);
+      },
+    );
+  });
+}

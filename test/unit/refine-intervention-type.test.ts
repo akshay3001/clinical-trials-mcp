@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import type { Study } from "../src/models/types.js";
-import { filterStudies } from "../src/utils/helpers.js";
+import type { Study } from "../../src/models/types.js";
+import { filterStudies } from "../../src/utils/helpers.js";
 
 test("matches intervention type labels to upstream enum values", () => {
   const studyWith = (nctId: string, type?: string) =>

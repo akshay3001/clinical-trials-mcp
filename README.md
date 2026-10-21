@@ -17,6 +17,10 @@ npm run build
 npm test
 ```
 
+Automated tests use loopback HTTP stubs and temporary storage. `npm test` builds
+the server and finds tests under `test/unit`, `test/integration`, and `test/mcp`.
+Also run `npm run typecheck:test` and `npm run format:check`.
+
 ## Usage
 
 ### MCP Server
@@ -36,6 +40,11 @@ Add to your `mcp.json`:
   }
 }
 ```
+
+Set `CLINICAL_TRIALS_API_BASE_URL` to use a compatible API endpoint, such as
+`http://127.0.0.1:8080/api/v2` for a local stub. The default is
+`https://clinicaltrials.gov/api/v2`. Include the API path and omit the trailing
+slash. Set `CLINICAL_TRIALS_MCP_DATA_DIR` to a temporary directory for tests.
 
 ### Storage setup
 
