@@ -683,14 +683,17 @@ export function createServer(): McpServer {
     },
     async ({ sessionId, maxResults }) => {
       try {
-        const studies = db.getSessionResults(sessionId);
+        const { studies, total } = db.getSessionResultsPage(
+          sessionId,
+          maxResults,
+        );
         if (studies.length === 0) return sessionNotFoundOrEmpty(sessionId);
 
         return {
           content: [
             {
               type: "text",
-              text: formatStudyList(studies, maxResults),
+              text: formatStudyList(studies, maxResults, total),
             },
           ],
         };
