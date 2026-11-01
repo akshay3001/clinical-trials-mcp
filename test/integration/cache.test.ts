@@ -260,3 +260,28 @@ test("disk promotion cannot keep a response past its original 24-hour expiry", (
   assert.equal(manager.get("search", params), null);
   assert.deepEqual(fs.readdirSync(cacheDir), []);
 });
+
+test("keeps entries above the memory size limit on disk only", () => {
+  const cacheDir = path.join(runtimeDirectory, "memory-size");
+  const options = { memoryEntryMaxBytes: 200 };
+  const manager = new CacheManager(cacheDir, options);
+  const small = { query: "small" };
+  const large = { query: "large" };
+  manager.set("search", small, "small");
+  manager.set("search", large, "x".repeat(300));
+
+  // A fresh instance reads both from disk, and holds only the small one.
+  const reader = new CacheManager(cacheDir, options);
+  assert.equal(reader.get("search", small), "small");
+  assert.equal(reader.get("search", large), "x".repeat(300));
+  // The large value replaces an older small value for the same key.
+  manager.set("search", small, "y".repeat(300));
+
+  // Remove the disk entries, so only the memory caches can answer.
+  fs.rmSync(cacheDir, { recursive: true });
+  fs.mkdirSync(cacheDir);
+  assert.equal(reader.get("search", small), "small");
+  assert.equal(reader.get("search", large), null);
+  assert.equal(manager.get("search", large), null);
+  assert.equal(manager.get("search", small), null);
+});
