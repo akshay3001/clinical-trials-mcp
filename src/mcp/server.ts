@@ -501,17 +501,22 @@ export function createServer(): McpServer {
           freshResponse = await withApiPermit(ctx.mcpReq.signal, async () => {
             const fetchedStudies: Study[] = [];
             let totalCount: number | undefined;
+            let nextPageToken: string | undefined;
             for await (const batch of apiClient.searchAll(searchParams, {
               signal: ctx.mcpReq.signal,
+              maxPages: MAX_FETCH_PAGES,
               maxResults: fetchLimit,
             })) {
               ctx.mcpReq.signal.throwIfAborted();
               const remaining = fetchLimit - fetchedStudies.length;
               totalCount ??= batch.totalCount;
+              nextPageToken = batch.nextPageToken;
               fetchedStudies.push(...batch.studies.slice(0, remaining));
               if (fetchedStudies.length >= fetchLimit) break;
             }
-            return { studies: fetchedStudies, totalCount };
+            // A token below fetchLimit means the page cap stopped the fetch.
+            // It is cached with the studies, so a cache hit keeps the warning.
+            return { studies: fetchedStudies, totalCount, nextPageToken };
           });
           studies = freshResponse.studies;
           cache.saveRawResponse(freshResponse, searchParams);
@@ -563,9 +568,11 @@ export function createServer(): McpServer {
           page?.totalCount !== undefined &&
           page.totalCount > nctIds.length
             ? `${nctIds.length.toLocaleString("en-US")} of ${page.totalCount.toLocaleString("en-US")} studies (stopped at fetchLimit ${fetchLimit.toLocaleString("en-US")}). Raise fetchLimit or narrow the search`
-            : !fetchAll && page?.nextPageToken
-              ? `${nctIds.length.toLocaleString("en-US")} of ${page.totalCount?.toLocaleString("en-US") ?? "more"} studies (first page only). Set fetchAll to true to fetch more pages`
-              : `${nctIds.length.toLocaleString("en-US")} ${nctIds.length === 1 ? "study" : "studies"}`;
+            : fetchAll && nctIds.length < fetchLimit && page?.nextPageToken
+              ? `${nctIds.length.toLocaleString("en-US")} of ${page.totalCount?.toLocaleString("en-US") ?? "more"} studies (stopped at the ${MAX_FETCH_PAGES}-page limit). Narrow the search`
+              : !fetchAll && page?.nextPageToken
+                ? `${nctIds.length.toLocaleString("en-US")} of ${page.totalCount?.toLocaleString("en-US") ?? "more"} studies (first page only). Set fetchAll to true to fetch more pages`
+                : `${nctIds.length.toLocaleString("en-US")} ${nctIds.length === 1 ? "study" : "studies"}`;
 
         return {
           content: [

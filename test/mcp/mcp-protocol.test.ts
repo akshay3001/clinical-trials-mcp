@@ -1086,6 +1086,45 @@ test("a complete fetchAll keeps its total without a limit warning", async () => 
   );
 });
 
+test("a fetchAll stopped by the page cap keeps its studies and warns", async () => {
+  let requests = 0;
+  await withHttpStub(
+    (_request, response) => {
+      requests += 1;
+      // The same study on every page leaves fewer unique studies than
+      // fetchLimit, so the 100-page cap stops the fetch first.
+      response.end(
+        JSON.stringify({
+          studies: [detailStudy("Repeated")],
+          totalCount: 500,
+          nextPageToken: `page-${requests}`,
+        }),
+      );
+    },
+    async (baseUrl) => {
+      await withStdioClient(
+        "modern",
+        async (client) => {
+          for (let i = 0; i < 2; i++) {
+            const result = await client.callTool({
+              name: "search_trials",
+              arguments: { fetchAll: true, pageSize: 1, fetchLimit: 100 },
+            });
+            assert.notEqual(result.isError, true);
+            assert.match(
+              JSON.stringify(result.content),
+              /Search found 1 of 500 studies \(stopped at the 100-page limit\)\. Narrow the search.*Session ID/,
+            );
+          }
+          // The second call is a cache hit.
+          assert.equal(requests, 100);
+        },
+        { CLINICAL_TRIALS_API_BASE_URL: baseUrl },
+      );
+    },
+  );
+});
+
 test(
   "cancelling a stale detail refresh stops fetch and leaves the stored timestamp unchanged",
   { timeout: 5000 },
