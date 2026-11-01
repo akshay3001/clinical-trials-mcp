@@ -45,6 +45,30 @@ function parseRetryAfter(header: string | null): number | undefined {
 
 const MAX_ERROR_DETAIL_LENGTH = 300;
 
+/**
+ * Read the per-attempt timeout from a CLINICAL_TRIALS_API_TIMEOUT_MS value.
+ * Unset or empty uses the default. Any value that is not a positive integer
+ * logs one warning to stderr and uses the default.
+ */
+export function parseRequestTimeoutMs(value: string | undefined): number {
+  const trimmed = value?.trim();
+  if (!trimmed) return DEFAULT_REQUEST_TIMEOUT_MS;
+
+  const timeoutMs = Number(trimmed);
+  if (
+    /^\d+$/.test(trimmed) &&
+    Number.isSafeInteger(timeoutMs) &&
+    timeoutMs > 0
+  ) {
+    return timeoutMs;
+  }
+
+  console.error(
+    `Ignoring invalid CLINICAL_TRIALS_API_TIMEOUT_MS="${value}"; using ${DEFAULT_REQUEST_TIMEOUT_MS} ms.`,
+  );
+  return DEFAULT_REQUEST_TIMEOUT_MS;
+}
+
 class HTTPResponseError extends Error {
   constructor(
     readonly status: number,
@@ -98,7 +122,14 @@ async function readJson(response: Response): Promise<unknown> {
 export class ClinicalTrialsAPIClient {
   private baseUrl: string;
 
-  constructor(baseUrl: string = BASE_URL) {
+  /**
+   * `requestTimeoutMs` is the per-attempt timeout used when a call does not
+   * pass its own `timeoutMs`.
+   */
+  constructor(
+    baseUrl: string = BASE_URL,
+    private readonly requestTimeoutMs: number = DEFAULT_REQUEST_TIMEOUT_MS,
+  ) {
     this.baseUrl = baseUrl;
   }
 
@@ -159,7 +190,7 @@ export class ClinicalTrialsAPIClient {
     options: APIRequestOptions = {},
     retries = MAX_RETRIES,
   ): Promise<Response> {
-    const timeoutMs = options.timeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
+    const timeoutMs = options.timeoutMs ?? this.requestTimeoutMs;
     if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
       throw new RangeError("timeoutMs must be a positive finite number");
     }
@@ -429,4 +460,5 @@ export class ClinicalTrialsAPIClient {
 // Export singleton instance
 export const apiClient = new ClinicalTrialsAPIClient(
   process.env.CLINICAL_TRIALS_API_BASE_URL,
+  parseRequestTimeoutMs(process.env.CLINICAL_TRIALS_API_TIMEOUT_MS),
 );

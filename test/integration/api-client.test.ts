@@ -3,7 +3,10 @@ import { createServer } from "node:http";
 import test from "node:test";
 import { withHttpStub } from "../helpers/http-stub.js";
 
-import { ClinicalTrialsAPIClient } from "../../src/api/client.js";
+import {
+  ClinicalTrialsAPIClient,
+  parseRequestTimeoutMs,
+} from "../../src/api/client.js";
 import {
   SearchParamsSchema,
   SearchResponseSchema,
@@ -18,8 +21,8 @@ class RecordingClient extends ClinicalTrialsAPIClient {
   readonly delays: number[] = [];
   private readonly waitMs: number;
 
-  constructor(baseUrl: string, waitMs = 0) {
-    super(baseUrl);
+  constructor(baseUrl: string, waitMs = 0, requestTimeoutMs?: number) {
+    super(baseUrl, requestTimeoutMs);
     this.waitMs = waitMs;
   }
 
@@ -420,6 +423,41 @@ test("gives each attempt its own timeout", async () => {
       server.close((error) => (error ? reject(error) : resolve())),
     );
   }
+});
+
+test("uses the client timeout when a call does not pass one", async () => {
+  let requestCount = 0;
+  await withHttpStub(
+    () => {
+      // Never answer, so only the client timeout ends each attempt.
+      requestCount += 1;
+    },
+    async (baseUrl) => {
+      const client = new RecordingClient(baseUrl, 0, 100);
+      const started = Date.now();
+      await assert.rejects(
+        client.search({ pageSize: 10 }),
+        /after 3 attempts: .*timeout/i,
+      );
+      // 3 x 100 ms, with wide margin. The 15 s default would take far longer.
+      assert.ok(Date.now() - started < 1_500);
+      assert.equal(requestCount, 3);
+    },
+  );
+});
+
+test("reads CLINICAL_TRIALS_API_TIMEOUT_MS and falls back when it is invalid", (t) => {
+  const warn = t.mock.method(console, "error", () => {});
+
+  assert.equal(parseRequestTimeoutMs(undefined), 15_000);
+  assert.equal(parseRequestTimeoutMs(""), 15_000);
+  assert.equal(parseRequestTimeoutMs("20000"), 20_000);
+  assert.equal(warn.mock.callCount(), 0);
+
+  for (const invalid of ["0", "-1", "1.5", "1e4", "abc", "Infinity"]) {
+    assert.equal(parseRequestTimeoutMs(invalid), 15_000, invalid);
+  }
+  assert.equal(warn.mock.callCount(), 6);
 });
 
 test("waits for Retry-After on a 429 instead of the exponential backoff", async () => {
