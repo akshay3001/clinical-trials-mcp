@@ -284,7 +284,9 @@ export class ClinicalTrialsAPIClient {
   /**
    * Get all results by following pagination. Upstream data can change between
    * page requests, so a study can appear on two pages; only its first
-   * occurrence is yielded, in API order.
+   * occurrence is yielded, in API order. Iteration stops after maxPages
+   * pages; the last batch then keeps its nextPageToken, so the caller can
+   * see that more pages remain.
    */
   async *searchAll(
     params: SearchParams,
@@ -343,9 +345,7 @@ export class ClinicalTrialsAPIClient {
         !!nextPageToken &&
         (maxResults === undefined || resultsYielded < maxResults);
 
-      if (hasMore && pagesFetched >= maxPages) {
-        throw new Error(`Pagination limit of ${maxPages} pages reached`);
-      }
+      if (hasMore && pagesFetched >= maxPages) return;
     }
   }
 

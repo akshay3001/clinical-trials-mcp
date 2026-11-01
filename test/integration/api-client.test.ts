@@ -562,51 +562,68 @@ for (const stalled of ["headers", "body"] as const) {
   );
 }
 
-for (const scenario of ["repeated token", "page cap"] as const) {
-  test(`rejects ${scenario} without requesting an extra page`, async () => {
-    const tokens: (string | null)[] = [];
-    await withHttpStub(
-      (request, response) => {
-        tokens.push(
-          new URL(request.url ?? "/", "http://localhost").searchParams.get(
-            "pageToken",
-          ),
-        );
-        response.end(
-          JSON.stringify({
-            studies: [study],
-            nextPageToken:
-              scenario === "repeated token" ? "same" : `page-${tokens.length}`,
-          }),
-        );
-      },
-      async (baseUrl) => {
-        const yielded: string[] = [];
-        await assert.rejects(
-          async () => {
-            for await (const batch of new ClinicalTrialsAPIClient(
-              baseUrl,
-            ).searchAll(
-              { pageSize: 1 },
-              { maxPages: scenario === "repeated token" ? 3 : 2 },
-            )) {
-              yielded.push(
-                ...batch.studies.map(
-                  (s) => s.protocolSection.identificationModule.nctId,
-                ),
-              );
-            }
-          },
-          scenario === "repeated token"
-            ? /repeated page token/
-            : /Pagination limit of 2 pages reached/,
-        );
-        assert.deepEqual(tokens, [
-          null,
-          scenario === "repeated token" ? "same" : "page-1",
-        ]);
-        assert.deepEqual(yielded, ["NCT00000001"]);
-      },
-    );
-  });
-}
+test("rejects a repeated page token without requesting an extra page", async () => {
+  const tokens: (string | null)[] = [];
+  await withHttpStub(
+    (request, response) => {
+      tokens.push(
+        new URL(request.url ?? "/", "http://localhost").searchParams.get(
+          "pageToken",
+        ),
+      );
+      response.end(JSON.stringify({ studies: [study], nextPageToken: "same" }));
+    },
+    async (baseUrl) => {
+      const yielded: string[] = [];
+      await assert.rejects(async () => {
+        for await (const batch of new ClinicalTrialsAPIClient(
+          baseUrl,
+        ).searchAll({ pageSize: 1 }, { maxPages: 3 })) {
+          yielded.push(
+            ...batch.studies.map(
+              (s) => s.protocolSection.identificationModule.nctId,
+            ),
+          );
+        }
+      }, /repeated page token/);
+      assert.deepEqual(tokens, [null, "same"]);
+      assert.deepEqual(yielded, ["NCT00000001"]);
+    },
+  );
+});
+
+test("stops at the page cap and keeps the yielded pages", async () => {
+  const tokens: (string | null)[] = [];
+  await withHttpStub(
+    (request, response) => {
+      tokens.push(
+        new URL(request.url ?? "/", "http://localhost").searchParams.get(
+          "pageToken",
+        ),
+      );
+      response.end(
+        JSON.stringify({
+          studies: [study],
+          nextPageToken: `page-${tokens.length}`,
+        }),
+      );
+    },
+    async (baseUrl) => {
+      const batches = [];
+      for await (const batch of new ClinicalTrialsAPIClient(baseUrl).searchAll(
+        { pageSize: 1 },
+        { maxPages: 2 },
+      )) {
+        batches.push(batch);
+      }
+      assert.deepEqual(tokens, [null, "page-1"]);
+      // The repeated study is dropped from page 2. The last batch keeps its
+      // token, which tells the caller that more pages remain.
+      assert.deepEqual(
+        batches.map((batch) => batch.studies.length),
+        [1, 0],
+      );
+      assert.equal(batches.at(-1)?.nextPageToken, "page-2");
+    },
+  );
+});
