@@ -61,6 +61,19 @@ test("evicts the least recently used memory entry past 100 entries", () => {
   assert.equal(manager.get("search", { i: 100 }), "result 100");
 });
 
+test("a write drops memory entries that passed the one-minute TTL", (t) => {
+  let now = 1_000_000;
+  t.mock.method(Date, "now", () => now);
+  const manager = new CacheManager(path.join(runtimeDirectory, "sweep"));
+  manager.set("search", { i: 1 }, "one");
+  manager.set("search", { i: 2 }, "two");
+  assert.equal(manager.memoryEntryCount, 2);
+  now += 60_001;
+  manager.set("search", { i: 3 }, "three");
+  assert.equal(manager.memoryEntryCount, 1);
+  assert.equal(manager.get("search", { i: 3 }), "three");
+});
+
 test("clearExpired removes expired entries by file age without reading them", (t) => {
   const cacheDir = path.join(runtimeDirectory, "expired");
   const manager = new CacheManager(cacheDir);

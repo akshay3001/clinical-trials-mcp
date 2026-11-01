@@ -89,6 +89,28 @@ export class CacheManager {
     return entry as CacheEntry<T>;
   }
 
+  /** Number of entries held in memory. Used by tests and diagnostics. */
+  get memoryEntryCount(): number {
+    return this.memoryCache.size;
+  }
+
+  /**
+   * Drop memory entries past the memory or disk TTL. Entries are otherwise
+   * only removed when read or evicted by the size cap, and a 1,000-study page
+   * is tens of megabytes, so a long-running server would hold many stale
+   * responses.
+   */
+  private sweepMemory(now = Date.now()): void {
+    for (const [key, entry] of this.memoryCache) {
+      if (
+        now - entry.loadedAt > MEMORY_CACHE_TTL_MS ||
+        now - entry.timestamp > DISK_CACHE_TTL_MS
+      ) {
+        this.memoryCache.delete(key);
+      }
+    }
+  }
+
   /**
    * Set in memory cache, and evict the least recently used entry when full
    */
@@ -98,6 +120,7 @@ export class CacheManager {
     data: T,
     timestamp = Date.now(),
   ): void {
+    this.sweepMemory();
     this.memoryCache.delete(key);
     this.memoryCache.set(key, {
       data,
@@ -248,14 +271,8 @@ export class CacheManager {
    * getFromDisk still removes a file whose content is invalid.
    */
   clearExpired(): void {
-    // Clear expired memory cache
     const now = Date.now();
-    for (const [key, entry] of this.memoryCache.entries()) {
-      const age = now - entry.timestamp;
-      if (age > MEMORY_CACHE_TTL_MS) {
-        this.memoryCache.delete(key);
-      }
-    }
+    this.sweepMemory(now);
 
     // Clear expired disk cache
     const files = fs.readdirSync(this.cacheDir);
