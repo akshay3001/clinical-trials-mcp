@@ -122,8 +122,10 @@ already point inside it.
 Large paginated searches are bounded to 10,000 studies and 100 API pages. Set
 `fetchLimit` to a smaller total when using `fetchAll`; it cannot exceed
 `pageSize × 100`. A capped fetchAll reports the number stored and the upstream
-total, for example `2 of 50 studies (stopped at fetchLimit 2)`. Cache hits keep
-this warning. Narrow the search or raise `fetchLimit` within the 10,000-study
+total, for example `2 of 50 studies (stopped at fetchLimit 2)`. A fetchAll that
+reaches 100 pages first keeps the studies it fetched and reports
+`(stopped at the 100-page limit)`. This can happen when pages repeat studies.
+Cache hits keep these warnings. Narrow the search or raise `fetchLimit` within the 10,000-study
 maximum to retrieve more results. The warning describes the search response;
 sessions and exports contain only the studies retrieved.
 
