@@ -405,6 +405,46 @@ async function withApiPermit<T>(
   }
 }
 
+/** Values a handler adds to its call log line. Never put study data here. */
+type CallLogFields = Record<string, string | number | boolean | undefined>;
+
+/**
+ * Wrap a tool handler so each call writes one stderr line: tool name, outcome,
+ * duration, and the fields the handler adds, for example
+ * `search_trials ok 412ms condition="asthma" fetchAll=false cache=miss results=37`.
+ * A string with spaces or other special characters is JSON-quoted, so user
+ * text cannot break the line or add a fake field. The error message is not
+ * repeated here; toolError writes it on its own `<tool> failed:` line.
+ */
+function logged<Args, Ctx>(
+  tool: string,
+  handler: (
+    args: Args,
+    ctx: Ctx,
+    fields: CallLogFields,
+  ) => Promise<CallToolResult>,
+): (args: Args, ctx: Ctx) => Promise<CallToolResult> {
+  return async (args, ctx) => {
+    const start = performance.now();
+    const fields: CallLogFields = {};
+    let outcome = "error";
+    try {
+      const result = await handler(args, ctx, fields);
+      if (!result.isError) outcome = "ok";
+      return result;
+    } finally {
+      const details = Object.entries(fields)
+        .filter(([, value]) => value !== undefined)
+        .map(
+          ([key, value]) =>
+            `${key}=${typeof value === "string" && !/^[\w.,:-]+$/.test(value) ? JSON.stringify(value) : value}`,
+        );
+      const duration = `${Math.round(performance.now() - start)}ms`;
+      console.error([tool, outcome, duration, ...details].join(" "));
+    }
+  };
+}
+
 /**
  * Return a tool failure as MCP content. The message also goes to stderr, so
  * an operator can match a user report to the server log. Study data is never
@@ -464,134 +504,148 @@ export function createServer(): McpServer {
         "Search ClinicalTrials.gov using condition, intervention, location, sponsor, phase, status, or general terms. Returns only the result count and a session ID; call summarize_session when you want study summaries.",
       inputSchema: searchTrialsInputSchema,
     },
-    async ({ fetchAll, fetchLimit, ...searchParamsInput }, ctx) => {
-      try {
-        ctx.mcpReq.signal.throwIfAborted();
-        // Sort statuses so every order of the same list shares a cache key.
-        const searchParams: SearchParams = {
-          ...searchParamsInput,
-          status:
-            searchParamsInput.status && [...searchParamsInput.status].sort(),
-        };
-        const cacheParams = fetchAll
-          ? { ...searchParams, fetchAll, fetchLimit }
-          : searchParams;
-        // Old fetchAll entries contain synthetic totals. Leave them unused.
-        const cachePrefix = fetchAll ? "searchAllV2" : "searchUpstream";
-        const cachedEntry = cache.getEntry<SearchResponse>(
-          cachePrefix,
-          cacheParams,
-        );
-        const cached = cachedEntry?.data;
-        // An entry cached before searchAll removed repeated NCT IDs can hold
-        // fewer unique studies than fetchLimit, so it is fetched again.
-        const cachedResponse =
-          cached &&
-          new Set(
-            cached.studies.map(
-              (study) => study.protocolSection.identificationModule.nctId,
-            ),
-          ).size === cached.studies.length
-            ? cached
-            : undefined;
-
-        let studies: Study[];
-        // A fresh API response is cached only after its session is created,
-        // so a failed session creation is not repeated from the cache.
-        let freshResponse: SearchResponse | undefined;
-        if (cachedResponse) {
-          studies = fetchAll
-            ? cachedResponse.studies.slice(0, fetchLimit)
-            : cachedResponse.studies;
-        } else if (fetchAll) {
-          freshResponse = await withApiPermit(ctx.mcpReq.signal, async () => {
-            const fetchedStudies: Study[] = [];
-            let totalCount: number | undefined;
-            let nextPageToken: string | undefined;
-            for await (const batch of apiClient.searchAll(searchParams, {
-              signal: ctx.mcpReq.signal,
-              maxPages: MAX_FETCH_PAGES,
-              maxResults: fetchLimit,
-            })) {
-              ctx.mcpReq.signal.throwIfAborted();
-              const remaining = fetchLimit - fetchedStudies.length;
-              totalCount ??= batch.totalCount;
-              nextPageToken = batch.nextPageToken;
-              fetchedStudies.push(...batch.studies.slice(0, remaining));
-              if (fetchedStudies.length >= fetchLimit) break;
-            }
-            // A token below fetchLimit means the page cap stopped the fetch.
-            // It is cached with the studies, so a cache hit keeps the warning.
-            return { studies: fetchedStudies, totalCount, nextPageToken };
-          });
-          studies = freshResponse.studies;
-          cache.saveRawResponse(freshResponse, searchParams);
-        } else {
+    logged(
+      "search_trials",
+      async ({ fetchAll, fetchLimit, ...searchParamsInput }, ctx, fields) => {
+        // Log the compact request only: user text, never study data.
+        Object.assign(fields, {
+          condition: searchParamsInput.condition,
+          intervention: searchParamsInput.intervention,
+          query: searchParamsInput.query,
+          status: searchParamsInput.status?.join(","),
+          pageSize: searchParamsInput.pageSize,
+          fetchAll,
+        });
+        try {
           ctx.mcpReq.signal.throwIfAborted();
-          const response = await withApiPermit(ctx.mcpReq.signal, () =>
-            apiClient.search(searchParams, {
-              signal: ctx.mcpReq.signal,
-            }),
+          // Sort statuses so every order of the same list shares a cache key.
+          const searchParams: SearchParams = {
+            ...searchParamsInput,
+            status:
+              searchParamsInput.status && [...searchParamsInput.status].sort(),
+          };
+          const cacheParams = fetchAll
+            ? { ...searchParams, fetchAll, fetchLimit }
+            : searchParams;
+          // Old fetchAll entries contain synthetic totals. Leave them unused.
+          const cachePrefix = fetchAll ? "searchAllV2" : "searchUpstream";
+          const cachedEntry = cache.getEntry<SearchResponse>(
+            cachePrefix,
+            cacheParams,
           );
-          ctx.mcpReq.signal.throwIfAborted();
-          studies = response.studies;
-          freshResponse = response;
-          cache.saveRawResponse(response, searchParams);
-        }
+          const cached = cachedEntry?.data;
+          // An entry cached before searchAll removed repeated NCT IDs can hold
+          // fewer unique studies than fetchLimit, so it is fetched again.
+          const cachedResponse =
+            cached &&
+            new Set(
+              cached.studies.map(
+                (study) => study.protocolSection.identificationModule.nctId,
+              ),
+            ).size === cached.studies.length
+              ? cached
+              : undefined;
+          fields.cache = cachedResponse ? "hit" : "miss";
 
-        for (const [index, study] of studies.entries()) {
-          ctx.mcpReq.signal.throwIfAborted();
-          // A cached response can be older than a stored study, so a cache
-          // hit only adds studies that are missing (session rows need them).
-          if (cachedResponse && cachedEntry)
-            db.insertStudyIfMissing(study, cachedEntry.timestamp);
-          else db.upsertStudy(study);
-          if ((index + 1) % 100 === 0) {
-            await new Promise<void>((resolve) => setImmediate(resolve));
+          let studies: Study[];
+          // A fresh API response is cached only after its session is created,
+          // so a failed session creation is not repeated from the cache.
+          let freshResponse: SearchResponse | undefined;
+          if (cachedResponse) {
+            studies = fetchAll
+              ? cachedResponse.studies.slice(0, fetchLimit)
+              : cachedResponse.studies;
+          } else if (fetchAll) {
+            freshResponse = await withApiPermit(ctx.mcpReq.signal, async () => {
+              const fetchedStudies: Study[] = [];
+              let totalCount: number | undefined;
+              let nextPageToken: string | undefined;
+              for await (const batch of apiClient.searchAll(searchParams, {
+                signal: ctx.mcpReq.signal,
+                maxPages: MAX_FETCH_PAGES,
+                maxResults: fetchLimit,
+              })) {
+                ctx.mcpReq.signal.throwIfAborted();
+                const remaining = fetchLimit - fetchedStudies.length;
+                totalCount ??= batch.totalCount;
+                nextPageToken = batch.nextPageToken;
+                fetchedStudies.push(...batch.studies.slice(0, remaining));
+                if (fetchedStudies.length >= fetchLimit) break;
+              }
+              // A token below fetchLimit means the page cap stopped the fetch.
+              // It is cached with the studies, so a cache hit keeps the warning.
+              return { studies: fetchedStudies, totalCount, nextPageToken };
+            });
+            studies = freshResponse.studies;
+            cache.saveRawResponse(freshResponse, searchParams);
+          } else {
+            ctx.mcpReq.signal.throwIfAborted();
+            const response = await withApiPermit(ctx.mcpReq.signal, () =>
+              apiClient.search(searchParams, {
+                signal: ctx.mcpReq.signal,
+              }),
+            );
+            ctx.mcpReq.signal.throwIfAborted();
+            studies = response.studies;
+            freshResponse = response;
+            cache.saveRawResponse(response, searchParams);
           }
-        }
-        ctx.mcpReq.signal.throwIfAborted();
 
-        const sessionId = generateSessionId();
-        // searchAll removes IDs repeated across pages. This also covers a
-        // repeated ID within a single page.
-        const nctIds = [
-          ...new Set(
-            studies.map(
-              (study) => study.protocolSection.identificationModule.nctId,
+          for (const [index, study] of studies.entries()) {
+            ctx.mcpReq.signal.throwIfAborted();
+            // A cached response can be older than a stored study, so a cache
+            // hit only adds studies that are missing (session rows need them).
+            if (cachedResponse && cachedEntry)
+              db.insertStudyIfMissing(study, cachedEntry.timestamp);
+            else db.upsertStudy(study);
+            if ((index + 1) % 100 === 0) {
+              await new Promise<void>((resolve) => setImmediate(resolve));
+            }
+          }
+          ctx.mcpReq.signal.throwIfAborted();
+
+          const sessionId = generateSessionId();
+          // searchAll removes IDs repeated across pages. This also covers a
+          // repeated ID within a single page.
+          const nctIds = [
+            ...new Set(
+              studies.map(
+                (study) => study.protocolSection.identificationModule.nctId,
+              ),
             ),
-          ),
-        ];
-        db.createSession(sessionId, searchParams, nctIds);
-        if (freshResponse) cache.set(cachePrefix, cacheParams, freshResponse);
+          ];
+          db.createSession(sessionId, searchParams, nctIds);
+          fields.results = nctIds.length;
+          if (freshResponse) cache.set(cachePrefix, cacheParams, freshResponse);
 
-        // A single-page search keeps nextPageToken, so the user can see that
-        // the session holds only the first page.
-        const page = freshResponse ?? cachedResponse;
-        const found =
-          fetchAll &&
-          nctIds.length >= fetchLimit &&
-          page?.totalCount !== undefined &&
-          page.totalCount > nctIds.length
-            ? `${nctIds.length.toLocaleString("en-US")} of ${page.totalCount.toLocaleString("en-US")} studies (stopped at fetchLimit ${fetchLimit.toLocaleString("en-US")}). Raise fetchLimit or narrow the search`
-            : fetchAll && nctIds.length < fetchLimit && page?.nextPageToken
-              ? `${nctIds.length.toLocaleString("en-US")} of ${page.totalCount?.toLocaleString("en-US") ?? "more"} studies (stopped at the ${MAX_FETCH_PAGES}-page limit). Narrow the search`
-              : !fetchAll && page?.nextPageToken
-                ? `${nctIds.length.toLocaleString("en-US")} of ${page.totalCount?.toLocaleString("en-US") ?? "more"} studies (first page only). Set fetchAll to true to fetch more pages`
-                : `${nctIds.length.toLocaleString("en-US")} ${nctIds.length === 1 ? "study" : "studies"}`;
+          // A single-page search keeps nextPageToken, so the user can see that
+          // the session holds only the first page.
+          const page = freshResponse ?? cachedResponse;
+          const found =
+            fetchAll &&
+            nctIds.length >= fetchLimit &&
+            page?.totalCount !== undefined &&
+            page.totalCount > nctIds.length
+              ? `${nctIds.length.toLocaleString("en-US")} of ${page.totalCount.toLocaleString("en-US")} studies (stopped at fetchLimit ${fetchLimit.toLocaleString("en-US")}). Raise fetchLimit or narrow the search`
+              : fetchAll && nctIds.length < fetchLimit && page?.nextPageToken
+                ? `${nctIds.length.toLocaleString("en-US")} of ${page.totalCount?.toLocaleString("en-US") ?? "more"} studies (stopped at the ${MAX_FETCH_PAGES}-page limit). Narrow the search`
+                : !fetchAll && page?.nextPageToken
+                  ? `${nctIds.length.toLocaleString("en-US")} of ${page.totalCount?.toLocaleString("en-US") ?? "more"} studies (first page only). Set fetchAll to true to fetch more pages`
+                  : `${nctIds.length.toLocaleString("en-US")} ${nctIds.length === 1 ? "study" : "studies"}`;
 
-        return {
-          content: [
-            {
-              type: "text",
-              text: `Search found ${found}.\n**Session ID:** ${sessionId}\n\nUse this session ID to refine results, call summarize_session for study summaries, or export data.`,
-            },
-          ],
-        };
-      } catch (error) {
-        return toolError("search_trials", error);
-      }
-    },
+          return {
+            content: [
+              {
+                type: "text",
+                text: `Search found ${found}.\n**Session ID:** ${sessionId}\n\nUse this session ID to refine results, call summarize_session for study summaries, or export data.`,
+              },
+            ],
+          };
+        } catch (error) {
+          return toolError("search_trials", error);
+        }
+      },
+    ),
   );
 
   server.registerTool(
@@ -602,7 +656,7 @@ export function createServer(): McpServer {
         "Filter results from an existing search session without making a new ClinicalTrials.gov API call. Returns only the before/after counts and session ID; call summarize_session when you want study summaries.",
       inputSchema: refineResultsInputSchema,
     },
-    async ({ sessionId, ...filterParamsInput }) => {
+    logged("refine_results", async ({ sessionId, ...filterParamsInput }) => {
       try {
         const studies = db.getSessionResults(sessionId);
         if (studies.length === 0) return sessionNotFoundOrEmpty(sessionId);
@@ -627,7 +681,7 @@ export function createServer(): McpServer {
       } catch (error) {
         return toolError("refine_results", error);
       }
-    },
+    }),
   );
 
   server.registerTool(
@@ -638,7 +692,7 @@ export function createServer(): McpServer {
         "Get detailed information about one clinical trial, including its full summary and optional eligibility criteria.",
       inputSchema: getTrialDetailsInputSchema,
     },
-    async ({ nctId, includeEligibility }, ctx) => {
+    logged("get_trial_details", async ({ nctId, includeEligibility }, ctx) => {
       try {
         ctx.mcpReq.signal.throwIfAborted();
         const stored = db.getStoredStudy(nctId);
@@ -683,7 +737,7 @@ export function createServer(): McpServer {
       } catch (error) {
         return toolError("get_trial_details", error);
       }
-    },
+    }),
   );
 
   server.registerTool(
@@ -694,7 +748,7 @@ export function createServer(): McpServer {
         "Return study summaries from a search session after search or refinement.",
       inputSchema: summarizeSessionInputSchema,
     },
-    async ({ sessionId, maxResults }) => {
+    logged("summarize_session", async ({ sessionId, maxResults }) => {
       try {
         const { studies, total } = db.getSessionResultsPage(
           sessionId,
@@ -713,7 +767,7 @@ export function createServer(): McpServer {
       } catch (error) {
         return toolError("summarize_session", error);
       }
-    },
+    }),
   );
 
   server.registerTool(
@@ -724,40 +778,43 @@ export function createServer(): McpServer {
         "Export a search session to CSV, JSON, or JSONL. CSV uses BLANK for absent values. JSON and JSONL preserve the stored upstream study shape. For studies stored by older versions, run search_trials again first.",
       inputSchema: exportResultsInputSchema,
     },
-    async ({ sessionId, format, outputPath, additionalColumns }) => {
-      try {
-        const studies = db.getSessionResults(sessionId, format !== "csv");
-        if (studies.length === 0) return sessionNotFoundOrEmpty(sessionId);
+    logged(
+      "export_results",
+      async ({ sessionId, format, outputPath, additionalColumns }) => {
+        try {
+          const studies = db.getSessionResults(sessionId, format !== "csv");
+          if (studies.length === 0) return sessionNotFoundOrEmpty(sessionId);
 
-        let finalPath: string;
-        switch (format as ExportFormat) {
-          case "csv":
-            finalPath = await exportToCSV(
-              studies,
-              outputPath,
-              additionalColumns as AdditionalExportColumn[] | undefined,
-            );
-            break;
-          case "json":
-            finalPath = await exportToJSON(studies, outputPath);
-            break;
-          case "jsonl":
-            finalPath = await exportToJSONL(studies, outputPath);
-            break;
+          let finalPath: string;
+          switch (format as ExportFormat) {
+            case "csv":
+              finalPath = await exportToCSV(
+                studies,
+                outputPath,
+                additionalColumns as AdditionalExportColumn[] | undefined,
+              );
+              break;
+            case "json":
+              finalPath = await exportToJSON(studies, outputPath);
+              break;
+            case "jsonl":
+              finalPath = await exportToJSONL(studies, outputPath);
+              break;
+          }
+
+          return {
+            content: [
+              {
+                type: "text",
+                text: `✓ Exported ${studies.length} studies to ${finalPath}`,
+              },
+            ],
+          };
+        } catch (error) {
+          return toolError("export_results", error);
         }
-
-        return {
-          content: [
-            {
-              type: "text",
-              text: `✓ Exported ${studies.length} studies to ${finalPath}`,
-            },
-          ],
-        };
-      } catch (error) {
-        return toolError("export_results", error);
-      }
-    },
+      },
+    ),
   );
 
   return server;

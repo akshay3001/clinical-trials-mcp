@@ -46,6 +46,12 @@ Set `CLINICAL_TRIALS_API_BASE_URL` to use a compatible API endpoint, such as
 `https://clinicaltrials.gov/api/v2`. Include the API path and omit the trailing
 slash. Set `CLINICAL_TRIALS_MCP_DATA_DIR` to a temporary directory for tests.
 
+The server writes diagnostics to stderr. Each tool call adds one line with the
+tool name, outcome, and duration. A `search_trials` line also shows the cache
+result, the result count, and the compact search request, for example
+`search_trials ok 412ms condition="lung cancer" pageSize=1000 fetchAll=false cache=miss results=37`.
+Study data and export contents are never logged.
+
 ### Storage setup
 
 Without an override, the server stores SQLite data in `<package root>/data`,
