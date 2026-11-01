@@ -502,6 +502,52 @@ test("reports a cut-off single-page search", async () => {
   });
 });
 
+test("logs one stderr line per search without study data", async () => {
+  await withStdioClient(
+    "modern",
+    async (client, runtimeDirectory, transport) => {
+      let stderr = "";
+      transport.stderr?.on("data", (chunk: Buffer) => (stderr += chunk));
+      const params = { condition: "log test", pageSize: 1000 };
+      const key = createHash("sha256")
+        .update(JSON.stringify(params))
+        .digest("hex");
+      const study = {
+        protocolSection: {
+          identificationModule: {
+            nctId: "NCT00000002",
+            briefTitle: "Secret study title",
+          },
+          statusModule: { overallStatus: "RECRUITING" },
+        },
+      };
+      fs.writeFileSync(
+        path.join(runtimeDirectory, "cache", `searchUpstream:${key}.json`),
+        JSON.stringify({
+          data: { studies: [study], totalCount: 1 },
+          params,
+          timestamp: Date.now(),
+        }),
+      );
+
+      const result = await client.callTool({
+        name: "search_trials",
+        arguments: { condition: "log test" },
+      });
+      assert.notEqual(result.isError, true);
+      // The line is written before the response, but the pipe can lag.
+      for (let i = 0; i < 50 && !stderr.includes("search_trials"); i++) {
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+      assert.match(
+        stderr,
+        /^search_trials ok \d+ms condition="log test" pageSize=1000 fetchAll=false cache=hit results=1$/m,
+      );
+      assert.doesNotMatch(stderr, /Secret study title|NCT00000002/);
+    },
+  );
+});
+
 test("continues to serve legacy MCP clients", async () => {
   await withStdioClient("legacy", async (client) => {
     assert.equal(client.getProtocolEra(), "legacy");
