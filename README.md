@@ -46,6 +46,12 @@ Set `CLINICAL_TRIALS_API_BASE_URL` to use a compatible API endpoint, such as
 `https://clinicaltrials.gov/api/v2`. Include the API path and omit the trailing
 slash. Set `CLINICAL_TRIALS_MCP_DATA_DIR` to a temporary directory for tests.
 
+Set `CLINICAL_TRIALS_API_TIMEOUT_MS` to change the timeout for each API attempt.
+The default is `15000` (15 s). A failed request makes up to three attempts, so
+the worst case is about 48 s, under the common 60 s MCP client limit. An HTTP
+429 with a long `Retry-After` can still wait up to 30 s per retry. An invalid
+value logs a warning and uses the default.
+
 The server writes diagnostics to stderr. Each tool call adds one line with the
 tool name, outcome, and duration. A `search_trials` line also shows the cache
 result, the result count, and the compact search request, for example
