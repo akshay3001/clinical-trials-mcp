@@ -41,13 +41,55 @@ function parseRetryAfter(header: string | null): number | undefined {
   return Math.min(Math.max(delayMs, 0), MAX_RETRY_AFTER_MS);
 }
 
+const MAX_ERROR_DETAIL_LENGTH = 300;
+
 class HTTPResponseError extends Error {
   constructor(
     readonly status: number,
     statusText: string,
+    detail?: string,
   ) {
-    super(`HTTP ${status}: ${statusText}`);
+    super(`HTTP ${status}: ${statusText}${detail ? ` (${detail})` : ""}`);
     this.name = "HTTPResponseError";
+  }
+}
+
+/**
+ * Read the plain-text reason ClinicalTrials.gov sends with a client error,
+ * such as "Error parsing query in Other terms: ...", so the user can fix the
+ * request. Server errors often carry HTML and are retried, so they are
+ * skipped. Returns undefined when the body is empty or cannot be read.
+ */
+async function readErrorDetail(
+  response: Response,
+): Promise<string | undefined> {
+  if (response.status >= 500) return undefined;
+  try {
+    const text = (await response.text()).replace(/\s+/g, " ").trim();
+    if (!text || text.startsWith("<")) return undefined;
+    return text.length > MAX_ERROR_DETAIL_LENGTH
+      ? `${text.slice(0, MAX_ERROR_DETAIL_LENGTH)}…`
+      : text;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Parse a JSON body, with a clear error when upstream sends something else.
+ * A timeout or abort while the body is read is not a syntax error and is
+ * passed through, so the retry logic still sees it.
+ */
+async function readJson(response: Response): Promise<unknown> {
+  try {
+    return await response.json();
+  } catch (error) {
+    if (error instanceof SyntaxError) {
+      throw new Error(
+        "ClinicalTrials.gov returned a response that is not JSON",
+      );
+    }
+    throw error;
   }
 }
 
@@ -140,7 +182,11 @@ export class ClinicalTrialsAPIClient {
           if (response.status === 429) {
             retryAfterMs = parseRetryAfter(response.headers.get("retry-after"));
           }
-          throw new HTTPResponseError(response.status, response.statusText);
+          throw new HTTPResponseError(
+            response.status,
+            response.statusText,
+            await readErrorDetail(response),
+          );
         }
 
         return response;
@@ -211,7 +257,7 @@ export class ClinicalTrialsAPIClient {
     const url = `${this.baseUrl}/studies?${urlParams.toString()}`;
 
     const response = await this.fetchWithRetry(url, options);
-    const data: unknown = await response.json();
+    const data: unknown = await readJson(response);
 
     const result = SearchResponseSchema.safeParse(data);
     if (result.success) return result.data;
@@ -248,7 +294,7 @@ export class ClinicalTrialsAPIClient {
     const url = `${this.baseUrl}/studies/${nctId}`;
 
     const response = await this.fetchWithRetry(url, options);
-    const data: unknown = await response.json();
+    const data: unknown = await readJson(response);
 
     // The v2 single-study endpoint returns the study directly. Retain support
     // for the older wrapped shape so cached fixtures and compatible mirrors do
