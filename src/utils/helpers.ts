@@ -494,13 +494,16 @@ export function formatStudySummary(
 }
 
 /**
- * Format multiple studies as a list
+ * Format multiple studies as a list. Pass `total` when `studies` holds only
+ * the first rows of a larger result set, so the header and footer count all
+ * of the results.
  */
 export function formatStudyList(
   studies: Study[],
   maxResults: number = 10,
+  total: number = studies.length,
 ): string {
-  let output = `Found ${studies.length} studies\n\n`;
+  let output = `Found ${total} studies\n\n`;
 
   const displayStudies = studies.slice(0, maxResults);
 
@@ -525,8 +528,8 @@ export function formatStudyList(
     output += "\n\n";
   }
 
-  if (studies.length > maxResults) {
-    output += `... and ${studies.length - maxResults} more studies\n`;
+  if (total > displayStudies.length) {
+    output += `... and ${total - displayStudies.length} more studies\n`;
   }
 
   return output;

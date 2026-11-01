@@ -840,6 +840,45 @@ export class DatabaseManager {
   }
 
   /**
+   * Get the first `limit` session results in stored order and the total count.
+   * Used by summarize_session, which shows only a few studies. A missing or
+   * expired session returns no studies and a total of 0.
+   */
+  getSessionResultsPage(
+    sessionId: string,
+    limit: number,
+  ): { studies: Study[]; total: number } {
+    if (!this.touchSession(sessionId)) {
+      return { studies: [], total: 0 };
+    }
+
+    // Use the same join as getSessionResults so the count matches the rows.
+    const { total } = this.db
+      .prepare(
+        `SELECT COUNT(*) AS total
+         FROM studies s
+         INNER JOIN session_results sr ON s.nct_id = sr.nct_id
+         WHERE sr.session_id = ?`,
+      )
+      .get(sessionId) as { total: number };
+    const rows = this.db
+      .prepare(
+        `SELECT s.raw_json
+         FROM studies s
+         INNER JOIN session_results sr ON s.nct_id = sr.nct_id
+         WHERE sr.session_id = ?
+         ORDER BY sr.position
+         LIMIT ?`,
+      )
+      .all(sessionId, limit) as { raw_json: string }[];
+
+    return {
+      studies: rows.map((row) => JSON.parse(row.raw_json)),
+      total,
+    };
+  }
+
+  /**
    * Update session results (for refinement)
    */
   updateSessionResults(sessionId: string, nctIds: string[]): boolean {

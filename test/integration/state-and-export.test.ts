@@ -87,6 +87,44 @@ test("keeps API order in session results across refinement", () => {
   }
 });
 
+test("summarizes a session from only the rows it shows", () => {
+  const databasePath = path.join(runtimeDirectory, "summary", "sessions.db");
+  const database = new DatabaseManager(databasePath);
+  const nctIds = Array.from(
+    { length: 15 },
+    (_, index) => `NCT${String(15 - index).padStart(8, "0")}`,
+  );
+
+  try {
+    for (const nctId of nctIds) {
+      database.upsertStudy({
+        protocolSection: {
+          identificationModule: { nctId, briefTitle: nctId },
+          statusModule: { overallStatus: "RECRUITING" },
+        },
+      } as Study);
+    }
+    database.createSession("summary-session", {}, nctIds);
+
+    const page = database.getSessionResultsPage("summary-session", 10);
+    assert.equal(page.total, 15);
+    assert.deepEqual(page.studies.map(nctIdOf), nctIds.slice(0, 10));
+
+    const text = helperModule.formatStudyList(page.studies, 10, page.total);
+    assert.match(text, /^Found 15 studies\n/);
+    assert.match(text, /^10\. \*\*NCT00000006\*\*/m);
+    assert.doesNotMatch(text, /^11\. /m);
+    assert.match(text, /\.\.\. and 5 more studies\n$/);
+
+    assert.deepEqual(database.getSessionResultsPage("missing", 10), {
+      studies: [],
+      total: 0,
+    });
+  } finally {
+    database.close();
+  }
+});
+
 test("migrates studies and sessions created by older schema versions", () => {
   const databasePath = path.join(runtimeDirectory, "legacy", "sessions.db");
   fs.mkdirSync(path.dirname(databasePath), { recursive: true });
