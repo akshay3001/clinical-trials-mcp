@@ -8,7 +8,9 @@ import {
 
 const BASE_URL = "https://clinicaltrials.gov/api/v2";
 const DEFAULT_PAGE_SIZE = 1000;
-const DEFAULT_REQUEST_TIMEOUT_MS = 30_000;
+// 3 attempts x 15 s + 1 s + 2 s backoff = 48 s, under the common 60 s MCP
+// client tool timeout. A long 429 Retry-After can still exceed it.
+const DEFAULT_REQUEST_TIMEOUT_MS = 15_000;
 const DEFAULT_MAX_PAGES = 100;
 const MAX_RETRIES = 3;
 const RETRY_DELAY_MS = 1000;
