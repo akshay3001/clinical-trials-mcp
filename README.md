@@ -92,8 +92,8 @@ Filtered from 1,000 to 174 studies.
 
 ### Smart Caching
 
-- **Memory cache**: 1 minute TTL for instant repeated queries
-- **Disk cache**: 24 hour TTL for persistence
+- **Memory cache**: 1 minute TTL for instant repeated queries. Responses above 20 MB (for example a large `fetchAll`) are read from disk instead.
+- **Disk cache**: 24 hour TTL for persistence. At server start, the oldest entries are removed when the total is above 2 GB. Set `CLINICAL_TRIALS_MCP_CACHE_MAX_BYTES` to change the cap.
 - **Raw JSONL**: Off by default. Set `CLINICAL_TRIALS_MCP_LOG_RAW_RESPONSES=true` to append search responses for debugging. Logs can be large and have no automatic retention limit.
 
 `get_trial_details` refreshes studies whose last successful API write is older

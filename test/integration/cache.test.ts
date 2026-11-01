@@ -285,3 +285,39 @@ test("keeps entries above the memory size limit on disk only", () => {
   assert.equal(manager.get("search", large), null);
   assert.equal(manager.get("search", small), null);
 });
+
+test("clearExpired removes the oldest entries until the cache is under its size cap", (t) => {
+  const cacheDir = path.join(runtimeDirectory, "disk-cap");
+  const manager = new CacheManager(cacheDir);
+  const files: string[] = [];
+  for (const [index, age] of [3, 1, 2].entries()) {
+    manager.set("search", { index }, "x".repeat(100));
+    const file = fs.readdirSync(cacheDir).find((name) => !files.includes(name));
+    assert.ok(file);
+    files.push(file);
+    // Give each entry a distinct age, in hours
+    const mtime = new Date(Date.now() - age * 60 * 60 * 1000);
+    fs.utimesSync(path.join(cacheDir, file), mtime, mtime);
+  }
+  // A raw log is never removed, and does not count toward the cap.
+  fs.writeFileSync(
+    path.join(cacheDir, "raw-2026-01-01.jsonl"),
+    "x".repeat(500),
+  );
+  const entryBytes = fs.statSync(path.join(cacheDir, files[0])).size;
+
+  const previous = process.env.CLINICAL_TRIALS_MCP_CACHE_MAX_BYTES;
+  t.after(() => {
+    if (previous === undefined)
+      delete process.env.CLINICAL_TRIALS_MCP_CACHE_MAX_BYTES;
+    else process.env.CLINICAL_TRIALS_MCP_CACHE_MAX_BYTES = previous;
+  });
+  process.env.CLINICAL_TRIALS_MCP_CACHE_MAX_BYTES = String(entryBytes * 2);
+  manager.clearExpired();
+
+  // The entry written 3 hours ago is removed; the two newer entries stay.
+  assert.deepEqual(
+    fs.readdirSync(cacheDir).sort(),
+    [files[1], files[2], "raw-2026-01-01.jsonl"].sort(),
+  );
+});

@@ -10,6 +10,9 @@ const MEMORY_CACHE_MAX_ENTRIES = 100;
 // A 10,000-study fetchAll response is about 170 MB. Entries above this size
 // are read from disk on each hit instead of being held in memory.
 const MEMORY_ENTRY_MAX_BYTES = 20 * 1024 * 1024;
+// Total size of entry files that clearExpired keeps. Override it with
+// CLINICAL_TRIALS_MCP_CACHE_MAX_BYTES.
+const DISK_CACHE_MAX_BYTES = 2 * 1024 * 1024 * 1024;
 // `<prefix>:<hash>.json`: SHA-256 hex keys, and base36 keys from before them
 const ENTRY_FILE_PATTERN = /^\w+:[0-9a-z]+\.json$/;
 
@@ -281,6 +284,12 @@ export class CacheManager {
     fs.appendFileSync(jsonlPath, line + "\n", "utf-8");
   }
 
+  /** Read the disk cap from the environment, or use the 2 GB default. */
+  private diskMaxBytes(): number {
+    const value = Number(process.env.CLINICAL_TRIALS_MCP_CACHE_MAX_BYTES);
+    return Number.isFinite(value) && value >= 0 ? value : DISK_CACHE_MAX_BYTES;
+  }
+
   /**
    * Clear all caches
    */
@@ -302,6 +311,9 @@ export class CacheManager {
    * the same moment as the entry timestamp. A 1,000-study page is tens of
    * megabytes, so parsing every file would make the server slow to start.
    * getFromDisk still removes a file whose content is invalid.
+   *
+   * After expired entries are removed, the oldest entry files by modification
+   * time are removed until their total size is at most the disk cap.
    */
   clearExpired(): void {
     const now = Date.now();
@@ -322,6 +334,29 @@ export class CacheManager {
         // The file was removed by another process between the listing and
         // the stat. Nothing to clear.
       }
+    }
+
+    // Remove the oldest entries until the total size is under the cap
+    const entries = fs
+      .readdirSync(this.cacheDir)
+      .filter((file) => ENTRY_FILE_PATTERN.test(file))
+      .flatMap((file) => {
+        const filePath = path.join(this.cacheDir, file);
+        try {
+          const { size, mtimeMs } = fs.statSync(filePath);
+          return [{ filePath, size, mtimeMs }];
+        } catch {
+          // Removed by another process since the listing
+          return [];
+        }
+      })
+      .sort((a, b) => a.mtimeMs - b.mtimeMs);
+    let totalBytes = entries.reduce((sum, { size }) => sum + size, 0);
+    const maxBytes = this.diskMaxBytes();
+    for (const { filePath, size } of entries) {
+      if (totalBytes <= maxBytes) break;
+      fs.rmSync(filePath, { force: true });
+      totalBytes -= size;
     }
   }
 }
