@@ -61,25 +61,29 @@ test("evicts the least recently used memory entry past 100 entries", () => {
   assert.equal(manager.get("search", { i: 100 }), "result 100");
 });
 
-test("clearExpired removes expired entries and keeps other files", () => {
+test("clearExpired removes expired entries by file age without reading them", (t) => {
   const cacheDir = path.join(runtimeDirectory, "expired");
   const manager = new CacheManager(cacheDir);
   manager.set("search", { query: "fresh" }, "fresh results");
   const [freshFile] = fs.readdirSync(cacheDir);
 
+  const expiredFile = path.join(cacheDir, "search:expired.json");
   fs.writeFileSync(
-    path.join(cacheDir, "search:expired.json"),
+    expiredFile,
     JSON.stringify({ data: "old", params: {}, timestamp: 0 }),
   );
-  fs.writeFileSync(path.join(cacheDir, "search:broken.json"), "not json");
-  // A file this cache did not write stays, even when it looks expired.
-  fs.writeFileSync(
-    path.join(cacheDir, "other.json"),
-    JSON.stringify({ timestamp: 0 }),
-  );
+  const expiredAt = new Date(Date.now() - 24 * 60 * 60 * 1000 - 1000);
+  fs.utimesSync(expiredFile, expiredAt, expiredAt);
+  // A file this cache did not write stays, even when it is old.
+  const otherFile = path.join(cacheDir, "other.json");
+  fs.writeFileSync(otherFile, JSON.stringify({ timestamp: 0 }));
+  fs.utimesSync(otherFile, expiredAt, expiredAt);
   fs.writeFileSync(path.join(cacheDir, "raw-2026-01-01.jsonl"), "{}\n{}\n");
 
+  // Entry files are not parsed, so a large cache does not slow server start.
+  const reads = t.mock.method(fs, "readFileSync");
   manager.clearExpired();
+  assert.equal(reads.mock.callCount(), 0);
 
   assert.deepEqual(fs.readdirSync(cacheDir).sort(), [
     "other.json",

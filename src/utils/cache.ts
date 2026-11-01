@@ -236,6 +236,11 @@ export class CacheManager {
    * Clear expired cache entries. Only entry files that match
    * ENTRY_FILE_PATTERN are checked, so the raw `*.jsonl` response logs and
    * files from other programs are kept. The server calls this at start.
+   *
+   * Disk age comes from the file modification time, which setOnDisk sets at
+   * the same moment as the entry timestamp. A 1,000-study page is tens of
+   * megabytes, so parsing every file would make the server slow to start.
+   * getFromDisk still removes a file whose content is invalid.
    */
   clearExpired(): void {
     // Clear expired memory cache
@@ -254,16 +259,13 @@ export class CacheManager {
       const filePath = path.join(this.cacheDir, file);
 
       try {
-        const content = fs.readFileSync(filePath, "utf-8");
-        const entry = JSON.parse(content);
-
-        const age = now - entry.timestamp;
+        const age = now - fs.statSync(filePath).mtimeMs;
         if (age > DISK_CACHE_TTL_MS) {
           fs.rmSync(filePath, { force: true });
         }
-      } catch (error) {
-        // Invalid file, delete it
-        fs.rmSync(filePath, { force: true });
+      } catch {
+        // The file was removed by another process between the listing and
+        // the stat. Nothing to clear.
       }
     }
   }
