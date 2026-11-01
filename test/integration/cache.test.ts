@@ -260,3 +260,64 @@ test("disk promotion cannot keep a response past its original 24-hour expiry", (
   assert.equal(manager.get("search", params), null);
   assert.deepEqual(fs.readdirSync(cacheDir), []);
 });
+
+test("keeps entries above the memory size limit on disk only", () => {
+  const cacheDir = path.join(runtimeDirectory, "memory-size");
+  const options = { memoryEntryMaxBytes: 200 };
+  const manager = new CacheManager(cacheDir, options);
+  const small = { query: "small" };
+  const large = { query: "large" };
+  manager.set("search", small, "small");
+  manager.set("search", large, "x".repeat(300));
+
+  // A fresh instance reads both from disk, and holds only the small one.
+  const reader = new CacheManager(cacheDir, options);
+  assert.equal(reader.get("search", small), "small");
+  assert.equal(reader.get("search", large), "x".repeat(300));
+  // The large value replaces an older small value for the same key.
+  manager.set("search", small, "y".repeat(300));
+
+  // Remove the disk entries, so only the memory caches can answer.
+  fs.rmSync(cacheDir, { recursive: true });
+  fs.mkdirSync(cacheDir);
+  assert.equal(reader.get("search", small), "small");
+  assert.equal(reader.get("search", large), null);
+  assert.equal(manager.get("search", large), null);
+  assert.equal(manager.get("search", small), null);
+});
+
+test("clearExpired removes the oldest entries until the cache is under its size cap", (t) => {
+  const cacheDir = path.join(runtimeDirectory, "disk-cap");
+  const manager = new CacheManager(cacheDir);
+  const files: string[] = [];
+  for (const [index, age] of [3, 1, 2].entries()) {
+    manager.set("search", { index }, "x".repeat(100));
+    const file = fs.readdirSync(cacheDir).find((name) => !files.includes(name));
+    assert.ok(file);
+    files.push(file);
+    // Give each entry a distinct age, in hours
+    const mtime = new Date(Date.now() - age * 60 * 60 * 1000);
+    fs.utimesSync(path.join(cacheDir, file), mtime, mtime);
+  }
+  // A raw log is never removed, and does not count toward the cap.
+  fs.writeFileSync(
+    path.join(cacheDir, "raw-2026-01-01.jsonl"),
+    "x".repeat(500),
+  );
+  const entryBytes = fs.statSync(path.join(cacheDir, files[0])).size;
+
+  const previous = process.env.CLINICAL_TRIALS_MCP_CACHE_MAX_BYTES;
+  t.after(() => {
+    if (previous === undefined)
+      delete process.env.CLINICAL_TRIALS_MCP_CACHE_MAX_BYTES;
+    else process.env.CLINICAL_TRIALS_MCP_CACHE_MAX_BYTES = previous;
+  });
+  process.env.CLINICAL_TRIALS_MCP_CACHE_MAX_BYTES = String(entryBytes * 2);
+  manager.clearExpired();
+
+  // The entry written 3 hours ago is removed; the two newer entries stay.
+  assert.deepEqual(
+    fs.readdirSync(cacheDir).sort(),
+    [files[1], files[2], "raw-2026-01-01.jsonl"].sort(),
+  );
+});
