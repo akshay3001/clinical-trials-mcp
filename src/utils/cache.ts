@@ -89,6 +89,28 @@ export class CacheManager {
     return entry as CacheEntry<T>;
   }
 
+  /** Number of entries held in memory. Used by tests and diagnostics. */
+  get memoryEntryCount(): number {
+    return this.memoryCache.size;
+  }
+
+  /**
+   * Drop memory entries past the memory or disk TTL. Entries are otherwise
+   * only removed when read or evicted by the size cap, and a 1,000-study page
+   * is tens of megabytes, so a long-running server would hold many stale
+   * responses.
+   */
+  private sweepMemory(now = Date.now()): void {
+    for (const [key, entry] of this.memoryCache) {
+      if (
+        now - entry.loadedAt > MEMORY_CACHE_TTL_MS ||
+        now - entry.timestamp > DISK_CACHE_TTL_MS
+      ) {
+        this.memoryCache.delete(key);
+      }
+    }
+  }
+
   /**
    * Set in memory cache, and evict the least recently used entry when full
    */
@@ -98,6 +120,7 @@ export class CacheManager {
     data: T,
     timestamp = Date.now(),
   ): void {
+    this.sweepMemory();
     this.memoryCache.delete(key);
     this.memoryCache.set(key, {
       data,
@@ -153,7 +176,10 @@ export class CacheManager {
   }
 
   /**
-   * Set in disk cache
+   * Set in disk cache. The entry is compact JSON, because a pretty-printed
+   * 1,000-study page is about 60% larger. It is written to a temporary file
+   * and renamed into place, so a concurrent reader (another server process
+   * with the same cache directory) never sees a partial file.
    */
   private setOnDisk<T>(key: string, params: object, data: T): void {
     const filePath = this.getDiskCachePath(key);
@@ -163,7 +189,9 @@ export class CacheManager {
       timestamp: Date.now(),
     };
 
-    fs.writeFileSync(filePath, JSON.stringify(entry, null, 2), "utf-8");
+    const tempPath = `${filePath}.${process.pid}.tmp`;
+    fs.writeFileSync(tempPath, JSON.stringify(entry), "utf-8");
+    fs.renameSync(tempPath, filePath);
   }
 
   /**
@@ -236,16 +264,15 @@ export class CacheManager {
    * Clear expired cache entries. Only entry files that match
    * ENTRY_FILE_PATTERN are checked, so the raw `*.jsonl` response logs and
    * files from other programs are kept. The server calls this at start.
+   *
+   * Disk age comes from the file modification time, which setOnDisk sets at
+   * the same moment as the entry timestamp. A 1,000-study page is tens of
+   * megabytes, so parsing every file would make the server slow to start.
+   * getFromDisk still removes a file whose content is invalid.
    */
   clearExpired(): void {
-    // Clear expired memory cache
     const now = Date.now();
-    for (const [key, entry] of this.memoryCache.entries()) {
-      const age = now - entry.timestamp;
-      if (age > MEMORY_CACHE_TTL_MS) {
-        this.memoryCache.delete(key);
-      }
-    }
+    this.sweepMemory(now);
 
     // Clear expired disk cache
     const files = fs.readdirSync(this.cacheDir);
@@ -254,16 +281,13 @@ export class CacheManager {
       const filePath = path.join(this.cacheDir, file);
 
       try {
-        const content = fs.readFileSync(filePath, "utf-8");
-        const entry = JSON.parse(content);
-
-        const age = now - entry.timestamp;
+        const age = now - fs.statSync(filePath).mtimeMs;
         if (age > DISK_CACHE_TTL_MS) {
           fs.rmSync(filePath, { force: true });
         }
-      } catch (error) {
-        // Invalid file, delete it
-        fs.rmSync(filePath, { force: true });
+      } catch {
+        // The file was removed by another process between the listing and
+        // the stat. Nothing to clear.
       }
     }
   }

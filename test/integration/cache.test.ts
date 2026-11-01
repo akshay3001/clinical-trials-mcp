@@ -61,31 +61,57 @@ test("evicts the least recently used memory entry past 100 entries", () => {
   assert.equal(manager.get("search", { i: 100 }), "result 100");
 });
 
-test("clearExpired removes expired entries and keeps other files", () => {
+test("a write drops memory entries that passed the one-minute TTL", (t) => {
+  let now = 1_000_000;
+  t.mock.method(Date, "now", () => now);
+  const manager = new CacheManager(path.join(runtimeDirectory, "sweep"));
+  manager.set("search", { i: 1 }, "one");
+  manager.set("search", { i: 2 }, "two");
+  assert.equal(manager.memoryEntryCount, 2);
+  now += 60_001;
+  manager.set("search", { i: 3 }, "three");
+  assert.equal(manager.memoryEntryCount, 1);
+  assert.equal(manager.get("search", { i: 3 }), "three");
+});
+
+test("clearExpired removes expired entries by file age without reading them", (t) => {
   const cacheDir = path.join(runtimeDirectory, "expired");
   const manager = new CacheManager(cacheDir);
   manager.set("search", { query: "fresh" }, "fresh results");
   const [freshFile] = fs.readdirSync(cacheDir);
 
+  const expiredFile = path.join(cacheDir, "search:expired.json");
   fs.writeFileSync(
-    path.join(cacheDir, "search:expired.json"),
+    expiredFile,
     JSON.stringify({ data: "old", params: {}, timestamp: 0 }),
   );
-  fs.writeFileSync(path.join(cacheDir, "search:broken.json"), "not json");
-  // A file this cache did not write stays, even when it looks expired.
-  fs.writeFileSync(
-    path.join(cacheDir, "other.json"),
-    JSON.stringify({ timestamp: 0 }),
-  );
+  const expiredAt = new Date(Date.now() - 24 * 60 * 60 * 1000 - 1000);
+  fs.utimesSync(expiredFile, expiredAt, expiredAt);
+  // A file this cache did not write stays, even when it is old.
+  const otherFile = path.join(cacheDir, "other.json");
+  fs.writeFileSync(otherFile, JSON.stringify({ timestamp: 0 }));
+  fs.utimesSync(otherFile, expiredAt, expiredAt);
   fs.writeFileSync(path.join(cacheDir, "raw-2026-01-01.jsonl"), "{}\n{}\n");
 
+  // Entry files are not parsed, so a large cache does not slow server start.
+  const reads = t.mock.method(fs, "readFileSync");
   manager.clearExpired();
+  assert.equal(reads.mock.callCount(), 0);
 
   assert.deepEqual(fs.readdirSync(cacheDir).sort(), [
     "other.json",
     "raw-2026-01-01.jsonl",
     freshFile,
   ]);
+});
+
+test("disk entries are compact JSON and no temporary file remains", () => {
+  const cacheDir = path.join(runtimeDirectory, "compact");
+  new CacheManager(cacheDir).set("search", { query: "x" }, { studies: [] });
+  const [file, ...rest] = fs.readdirSync(cacheDir);
+  assert.deepEqual(rest, []);
+  const contents = fs.readFileSync(path.join(cacheDir, file), "utf8");
+  assert.equal(contents, JSON.stringify(JSON.parse(contents)));
 });
 
 test("raw response logging is off by default and enabled only by explicit opt-in", () => {

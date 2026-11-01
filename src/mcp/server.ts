@@ -405,8 +405,14 @@ async function withApiPermit<T>(
   }
 }
 
-function toolError(error: unknown): CallToolResult {
+/**
+ * Return a tool failure as MCP content. The message also goes to stderr, so
+ * an operator can match a user report to the server log. Study data is never
+ * part of the message.
+ */
+function toolError(tool: string, error: unknown): CallToolResult {
   const message = error instanceof Error ? error.message : String(error);
+  console.error(`${tool} failed: ${message}`);
   return {
     content: [{ type: "text", text: `Error: ${message}` }],
     isError: true,
@@ -583,7 +589,7 @@ export function createServer(): McpServer {
           ],
         };
       } catch (error) {
-        return toolError(error);
+        return toolError("search_trials", error);
       }
     },
   );
@@ -619,7 +625,7 @@ export function createServer(): McpServer {
           ],
         };
       } catch (error) {
-        return toolError(error);
+        return toolError("refine_results", error);
       }
     },
   );
@@ -675,7 +681,7 @@ export function createServer(): McpServer {
           ],
         };
       } catch (error) {
-        return toolError(error);
+        return toolError("get_trial_details", error);
       }
     },
   );
@@ -705,7 +711,7 @@ export function createServer(): McpServer {
           ],
         };
       } catch (error) {
-        return toolError(error);
+        return toolError("summarize_session", error);
       }
     },
   );
@@ -749,7 +755,7 @@ export function createServer(): McpServer {
           ],
         };
       } catch (error) {
-        return toolError(error);
+        return toolError("export_results", error);
       }
     },
   );

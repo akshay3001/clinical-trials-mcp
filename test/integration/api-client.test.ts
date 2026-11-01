@@ -123,9 +123,10 @@ test("bounds pagination and does not retry non-retryable HTTP failures", async (
     assert.equal(batches[0]?.studies.length, 1);
     assert.equal(requestCount, 1);
 
+    // The upstream reason is included, so the user can fix the query.
     await assert.rejects(
       client.search({ query: "fail", pageSize: 1000 }),
-      /after 1 attempt: HTTP 400/,
+      /after 1 attempt: HTTP 400: Bad Request \(bad request\)/,
     );
     assert.equal(requestCount, 2);
   } finally {
@@ -311,6 +312,30 @@ test("rejects invalid studies instead of returning unvalidated data", async () =
       server.close((error) => (error ? reject(error) : resolve())),
     );
   }
+});
+
+test("reports a non-JSON body clearly and skips HTML error details", async () => {
+  await withHttpStub(
+    (request, response) => {
+      if (request.url?.includes("html")) {
+        response.writeHead(404).end("<html><body>Not here</body></html>");
+        return;
+      }
+      response.setHeader("content-type", "text/html");
+      response.end("<html>maintenance</html>");
+    },
+    async (baseUrl) => {
+      const client = new ClinicalTrialsAPIClient(baseUrl);
+      await assert.rejects(
+        client.search({ pageSize: 1000 }),
+        /returned a response that is not JSON/,
+      );
+      await assert.rejects(
+        client.search({ query: "html", pageSize: 1000 }),
+        /HTTP 404: Not Found$/,
+      );
+    },
+  );
 });
 
 test("rejects a search body without studies instead of returning zero results", async () => {
