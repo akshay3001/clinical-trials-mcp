@@ -153,7 +153,10 @@ export class CacheManager {
   }
 
   /**
-   * Set in disk cache
+   * Set in disk cache. The entry is compact JSON, because a pretty-printed
+   * 1,000-study page is about 60% larger. It is written to a temporary file
+   * and renamed into place, so a concurrent reader (another server process
+   * with the same cache directory) never sees a partial file.
    */
   private setOnDisk<T>(key: string, params: object, data: T): void {
     const filePath = this.getDiskCachePath(key);
@@ -163,7 +166,9 @@ export class CacheManager {
       timestamp: Date.now(),
     };
 
-    fs.writeFileSync(filePath, JSON.stringify(entry, null, 2), "utf-8");
+    const tempPath = `${filePath}.${process.pid}.tmp`;
+    fs.writeFileSync(tempPath, JSON.stringify(entry), "utf-8");
+    fs.renameSync(tempPath, filePath);
   }
 
   /**

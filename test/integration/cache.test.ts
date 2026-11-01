@@ -92,6 +92,15 @@ test("clearExpired removes expired entries by file age without reading them", (t
   ]);
 });
 
+test("disk entries are compact JSON and no temporary file remains", () => {
+  const cacheDir = path.join(runtimeDirectory, "compact");
+  new CacheManager(cacheDir).set("search", { query: "x" }, { studies: [] });
+  const [file, ...rest] = fs.readdirSync(cacheDir);
+  assert.deepEqual(rest, []);
+  const contents = fs.readFileSync(path.join(cacheDir, file), "utf8");
+  assert.equal(contents, JSON.stringify(JSON.parse(contents)));
+});
+
 test("raw response logging is off by default and enabled only by explicit opt-in", () => {
   const directory = path.join(runtimeDirectory, "raw-opt-in");
   const manager = new CacheManager(directory);
